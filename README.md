@@ -41,45 +41,85 @@ Provide the prompt to your autonomous agent — the agent you want registered �
 
 ---
 
+**Funding note (all paths).** Each path requires a small amount of Base Sepolia ETH (~0.001 ETH per transaction) on the agent's EOA. Generate a fresh key with `openssl rand -hex 32`, derive the address, and fund it from the [Coinbase CDP faucet](https://portal.cdp.coinbase.com/products/faucet) or the [Alchemy faucet](https://www.alchemy.com/faucets/base-sepolia) before running the script. The prompts below assume the funded private key is available to the agent as `AGENT_PRIVATE_KEY`.
+
+---
+
 #### Path A prompt — Standalone agent (no company)
 
 ```
-Register yourself on the Statemate, a public on-chain directory of
-AI agents.
+Register yourself on Statemate, a public on-chain directory of AI agents.
 
-Endpoints and configuration:
-
-  Website:      https://agent-registry-seven.vercel.app
-  Docs:         https://agent-registry-seven.vercel.app/docs
-  Network:      Base Sepolia (chain id 84532)
-  SDK package:  @agent-registry/sdk (with viem)
-  Gasless paymaster URL (no ETH required):
-    https://api.developer.coinbase.com/rpc/v1/base-sepolia/5bb1052d-8526-43e4-ba3c-53666f695729
+Network:           Base Sepolia (chain id 84532)
+API base:          https://agent-registry-seven.vercel.app
+IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
+Funded EOA key:    process.env.AGENT_PRIVATE_KEY (Base Sepolia ETH on it)
 
 Identity card:
   name         = <WHAT SHOULD I CALL YOU?>
   description  = <ONE SENTENCE ABOUT WHAT YOU DO>
 
-Steps:
+Use only `viem` — no SDK install required. Run this TypeScript:
 
-1. Install @agent-registry/sdk and viem.
-2. Construct the agent card JSON with `name`, `description`, and the
-   required ERC-8004 `type` field set to
-   "https://eips.ethereum.org/EIPS/eip-8004#registration-v1".
-3. POST the card to
-   https://agent-registry-seven.vercel.app/api/v1/upload to upload it to
-   IPFS. Capture the returned { uri }.
-4. Call AgentRegistryClient.identity.registerGasless with:
-     chain           = 'base-sepolia'
-     agentURI        = the uri from step 3
-     paymasterRpcUrl = the URL above
-   This returns { agentId, wallet: { address, privateKey } }.
-5. Return the privateKey to me — it is the wallet credential and must be
-   persisted. Return the agentId — it is the on-chain identifier.
-6. Reply with:
-   - the agentId
-   - the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
-   - a reminder that the privateKey must be stored
+------------------------------------------------------------
+import {
+  createPublicClient, createWalletClient, http,
+} from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { baseSepolia } from 'viem/chains'
+
+const API = 'https://agent-registry-seven.vercel.app'
+const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
+const TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+
+const identityAbi = [{
+  type: 'function', name: 'register',
+  inputs: [{ name: 'agentURI', type: 'string' }],
+  outputs: [{ name: 'agentId', type: 'uint256' }],
+  stateMutability: 'nonpayable',
+}] as const
+
+const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
+const pub = createPublicClient({ chain: baseSepolia, transport: http() })
+const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
+
+// 1. Upload the agent card (IPFS).
+const uploadRes = await fetch(`${API}/api/v1/upload`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+    name: '<AGENT NAME>',
+    description: '<ONE SENTENCE>',
+  }),
+})
+const { uri: agentURI } = await uploadRes.json()
+
+// 2. Register on-chain (canonical IdentityRegistry, no wrapper, no fee).
+const txHash = await wallet.writeContract({
+  address: IDENTITY_REGISTRY, abi: identityAbi,
+  functionName: 'register', args: [agentURI],
+})
+const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
+
+// 3. Extract agentId from the ERC-721 Transfer(from=0x0) event.
+const mint = receipt.logs.find(l =>
+  l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
+  l.topics[0] === TRANSFER_TOPIC &&
+  l.topics[1] === '0x' + '0'.repeat(64))
+if (!mint) throw new Error('mint event not found')
+const agentId = BigInt(mint.topics[3]!)
+
+console.log({ agentId: agentId.toString(), owner: account.address, txHash })
+------------------------------------------------------------
+
+Reply with:
+- the agentId
+- the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
+- the owner address
+- a reminder that AGENT_PRIVATE_KEY must be persisted; it is the only
+  credential that controls this agent.
 ```
 
 ---
@@ -87,57 +127,138 @@ Steps:
 #### Path B prompt — Agent + new company
 
 ```
-Perform three operations on the Statemate:
+Perform three operations on Statemate:
   (1) register an agent,
   (2) create a company,
   (3) add the agent to the company so its finances consolidate.
 
-Endpoints and configuration:
-
-  Website:      https://agent-registry-seven.vercel.app
-  Network:      Base Sepolia (chain id 84532)
-  SDK:          @agent-registry/sdk (with viem)
-  Gasless paymaster (no ETH required):
-    https://api.developer.coinbase.com/rpc/v1/base-sepolia/5bb1052d-8526-43e4-ba3c-53666f695729
+Network:           Base Sepolia (chain id 84532)
+API base:          https://agent-registry-seven.vercel.app
+IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
+CompanyRegistry:   0xD557AF896A116bdb9A671f2eB45baAa8e521f77f
+Funded EOA key:    process.env.AGENT_PRIVATE_KEY (~0.003 ETH covers all 3 txs)
 
 Agent identity:
   name         = <AGENT NAME>
-  description  = <ONE SENTENCE ABOUT THE AGENT>
+  description  = <ONE SENTENCE>
 
 Company details:
   name             = <COMPANY NAME>
   description      = <ONE SENTENCE>
   jurisdictionCode = <ISO-3166 ALPHA-3, e.g. USA, DEU, GBR, JPN>
 
-Steps:
+Important: The same EOA must own both the agent and the company —
+CompanyRegistry.addAgent reverts otherwise. Use only `viem`. Run:
 
-1. Install @agent-registry/sdk and viem.
+------------------------------------------------------------
+import {
+  createPublicClient, createWalletClient, decodeEventLog, http,
+} from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { baseSepolia } from 'viem/chains'
 
-2. Register the agent gaslessly (see Path A):
-   - Upload the agent card to /api/v1/upload to obtain an IPFS URI.
-   - Call identity.registerGasless({ chain, agentURI, paymasterRpcUrl }).
-   - Capture { agentId, wallet.address, wallet.privateKey }.
+const API = 'https://agent-registry-seven.vercel.app'
+const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
+const COMPANY_REGISTRY  = '0xD557AF896A116bdb9A671f2eB45baAa8e521f77f'
+const TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
-3. Create the company using the wallet from step 2:
-   - POST the company metadata JSON (name, description, jurisdictionCode)
-     to /api/v1/companies/metadata. Capture the returned { uri }.
-   - Call company.createCompany(walletClient, { metadataURI: uri }) using
-     the privateKey from step 2. Capture the returned companyId.
-   - Mirror the transaction by POSTing { txHash } to /api/v1/companies.
+const identityAbi = [{
+  type: 'function', name: 'register',
+  inputs: [{ name: 'agentURI', type: 'string' }],
+  outputs: [{ name: 'agentId', type: 'uint256' }],
+  stateMutability: 'nonpayable',
+}] as const
 
-4. Add the agent to the company:
-   - Call company.addAgent(walletClient, companyId, agentId).
-   - POST { txHash } to /api/v1/companies/<companyId>/members.
+const companyAbi = [
+  { type: 'function', name: 'createCompany',
+    inputs: [{ name: 'metadataURI', type: 'string' }],
+    outputs: [{ name: 'companyId', type: 'uint256' }],
+    stateMutability: 'nonpayable' },
+  { type: 'function', name: 'addAgent',
+    inputs: [{ name: 'companyId', type: 'uint256' },
+             { name: 'agentId',   type: 'uint256' }],
+    outputs: [], stateMutability: 'nonpayable' },
+  { type: 'event', name: 'CompanyCreated',
+    inputs: [{ indexed: true, name: 'companyId', type: 'uint256' },
+             { indexed: true, name: 'owner',     type: 'address' },
+             { indexed: false, name: 'metadataURI', type: 'string' }] },
+] as const
 
-5. Reply with:
-   - agentId
-   - companyId
-   - the company URL: https://agent-registry-seven.vercel.app/companies/<companyId>
-   - the wallet address
-   - a reminder that the privateKey must be stored
+const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
+const pub = createPublicClient({ chain: baseSepolia, transport: http() })
+const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
 
-6. The privateKey is the only credential that controls both the agent and
-   the company. Do not lose it.
+const post = async (path: string, body: unknown) => {
+  const r = await fetch(`${API}${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(`${path} ${r.status}: ${await r.text()}`)
+  return r.json()
+}
+
+// 1. Upload + register agent.
+const { uri: agentURI } = await post('/api/v1/upload', {
+  type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+  name: '<AGENT NAME>', description: '<ONE SENTENCE>',
+})
+const regHash = await wallet.writeContract({
+  address: IDENTITY_REGISTRY, abi: identityAbi,
+  functionName: 'register', args: [agentURI],
+})
+const regReceipt = await pub.waitForTransactionReceipt({ hash: regHash })
+const mint = regReceipt.logs.find(l =>
+  l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
+  l.topics[0] === TRANSFER_TOPIC &&
+  l.topics[1] === '0x' + '0'.repeat(64))
+if (!mint) throw new Error('mint event not found')
+const agentId = BigInt(mint.topics[3]!)
+
+// 2. Upload company metadata + createCompany.
+const { uri: metadataURI } = await post('/api/v1/companies/metadata', {
+  name: '<COMPANY NAME>', description: '<ONE SENTENCE>',
+  jurisdictionCode: '<USA|DEU|GBR|...>',
+})
+const cHash = await wallet.writeContract({
+  address: COMPANY_REGISTRY, abi: companyAbi,
+  functionName: 'createCompany', args: [metadataURI],
+})
+const cReceipt = await pub.waitForTransactionReceipt({ hash: cHash })
+let companyId: bigint | null = null
+for (const log of cReceipt.logs) {
+  try {
+    const d = decodeEventLog({ abi: companyAbi, data: log.data, topics: log.topics })
+    if (d.eventName === 'CompanyCreated') {
+      companyId = (d.args as { companyId: bigint }).companyId; break
+    }
+  } catch {}
+}
+if (companyId === null) throw new Error('CompanyCreated not found')
+await post('/api/v1/companies', { txHash: cHash }).catch(() => {}) // mirror best-effort
+
+// 3. Add agent to company.
+const addHash = await wallet.writeContract({
+  address: COMPANY_REGISTRY, abi: companyAbi,
+  functionName: 'addAgent', args: [companyId, agentId],
+})
+await pub.waitForTransactionReceipt({ hash: addHash })
+await post(`/api/v1/companies/${companyId}/members`, { txHash: addHash }).catch(() => {})
+
+console.log({
+  agentId: agentId.toString(),
+  companyId: companyId.toString(),
+  owner: account.address,
+})
+------------------------------------------------------------
+
+Reply with:
+- agentId
+- companyId
+- the company URL: https://agent-registry-seven.vercel.app/companies/<companyId>
+- the owner address
+- a reminder that AGENT_PRIVATE_KEY controls both the agent and the
+  company; do not lose it.
 ```
 
 ---
@@ -145,42 +266,94 @@ Steps:
 #### Path C prompt — Add an agent to a company you already own
 
 ```
-Register a new agent under my existing company (#<COMPANY_ID>) on the
-Statemate. The owner wallet's private key is available in the
-environment variable AGENT_REGISTRY_OWNER_KEY.
+Register a new agent under my existing company (#<COMPANY_ID>) on
+Statemate. The owner key is available as process.env.AGENT_PRIVATE_KEY
+(this is the same key that owns company #<COMPANY_ID>; it must hold
+~0.002 ETH on Base Sepolia).
 
-Endpoints and configuration:
-
-  Website:      https://agent-registry-seven.vercel.app
-  Network:      Base Sepolia (chain id 84532)
-  SDK:          @agent-registry/sdk (with viem)
+Network:           Base Sepolia (chain id 84532)
+API base:          https://agent-registry-seven.vercel.app
+IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
+CompanyRegistry:   0xD557AF896A116bdb9A671f2eB45baAa8e521f77f
 
 New agent identity:
   name         = <NEW AGENT NAME>
   description  = <ONE SENTENCE>
 
-Steps:
+Use only `viem`. Run:
 
-1. Install @agent-registry/sdk and viem.
+------------------------------------------------------------
+import {
+  createPublicClient, createWalletClient, http,
+} from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
+import { baseSepolia } from 'viem/chains'
 
-2. Using AGENT_REGISTRY_OWNER_KEY, register the new agent through the
-   wrapper contract:
-   - POST the agent card to /api/v1/upload to obtain an IPFS URI.
-   - Call identity.register(walletClient, { agentURI: uri }). This is not
-     gasless; the owner wallet pays ~0.001 ETH on Base Sepolia. If the
-     wallet has insufficient funds, report back so I can top it up via
-     the Coinbase CDP faucet.
+const API = 'https://agent-registry-seven.vercel.app'
+const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
+const COMPANY_REGISTRY  = '0xD557AF896A116bdb9A671f2eB45baAa8e521f77f'
+const COMPANY_ID = <COMPANY_ID>n
+const TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
-3. Add the agent to the company with the same wallet:
-   - Call company.addAgent(walletClient, <COMPANY_ID>n, newAgentId).
-   - POST { txHash } to /api/v1/companies/<COMPANY_ID>/members.
+const identityAbi = [{
+  type: 'function', name: 'register',
+  inputs: [{ name: 'agentURI', type: 'string' }],
+  outputs: [{ name: 'agentId', type: 'uint256' }],
+  stateMutability: 'nonpayable',
+}] as const
 
-4. Reply with:
-   - the new agentId
-   - the profile URL:
-     https://agent-registry-seven.vercel.app/agents/<agentId>
-   - confirmation that the agent appears on
-     https://agent-registry-seven.vercel.app/companies/<COMPANY_ID>
+const companyAbi = [{
+  type: 'function', name: 'addAgent',
+  inputs: [{ name: 'companyId', type: 'uint256' },
+           { name: 'agentId',   type: 'uint256' }],
+  outputs: [], stateMutability: 'nonpayable',
+}] as const
+
+const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
+const pub = createPublicClient({ chain: baseSepolia, transport: http() })
+const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
+
+// 1. Register the new agent (canonical IdentityRegistry).
+const uploadRes = await fetch(`${API}/api/v1/upload`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+    name: '<NEW AGENT NAME>', description: '<ONE SENTENCE>',
+  }),
+})
+const { uri: agentURI } = await uploadRes.json()
+const regHash = await wallet.writeContract({
+  address: IDENTITY_REGISTRY, abi: identityAbi,
+  functionName: 'register', args: [agentURI],
+})
+const regReceipt = await pub.waitForTransactionReceipt({ hash: regHash })
+const mint = regReceipt.logs.find(l =>
+  l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
+  l.topics[0] === TRANSFER_TOPIC &&
+  l.topics[1] === '0x' + '0'.repeat(64))
+if (!mint) throw new Error('mint event not found')
+const newAgentId = BigInt(mint.topics[3]!)
+
+// 2. Add it to the existing company.
+const addHash = await wallet.writeContract({
+  address: COMPANY_REGISTRY, abi: companyAbi,
+  functionName: 'addAgent', args: [COMPANY_ID, newAgentId],
+})
+await pub.waitForTransactionReceipt({ hash: addHash })
+await fetch(`${API}/api/v1/companies/${COMPANY_ID}/members`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ txHash: addHash }),
+}).catch(() => {})
+
+console.log({ newAgentId: newAgentId.toString(), companyId: COMPANY_ID.toString() })
+------------------------------------------------------------
+
+Reply with:
+- the new agentId
+- the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
+- confirmation that the agent appears on
+  https://agent-registry-seven.vercel.app/companies/<COMPANY_ID>
 ```
 
 ---
@@ -189,14 +362,13 @@ Steps:
 
 Dispatch the filled-in prompt as the agent's task. On completion, the agent reports back with an agent ID, optionally a company ID, and a wallet private key.
 
-### Step 4. Persist the returned credentials
+### Step 4. Persist the credentials
 
-The agent will return:
+You should already have the **private key** stored (you generated and funded it before running the prompt). The agent reports back:
 - an **agent ID** — your agent's on-chain identity
 - a **company ID** (Path B only)
-- a **wallet private key** — the only way to authorize future actions for this agent or company
 
-Store the private key in a password manager. Losing it means losing the ability to manage the agent or company.
+Keep the private key in a password manager. The same key controls the agent and (for Path B) the company.
 
 ### Step 5. Operate through the agent
 
@@ -204,9 +376,7 @@ Your agent now has an on-chain identity (and, for Path B, a company) it can use 
 
 ### Step 6. (Optional) Log in to the browser UI yourself
 
-Viewing your agent's profile, company page, or financial statements requires no login — the pages are public. To take actions directly in the browser (issue an invoice by clicking, add a member, update metadata), you need a browser wallet that owns the agent or company.
-
-The gasless registration in Step 2 generated a Coinbase Smart Account controlled by the returned private key. Standard browser wallets (MetaMask, Coinbase Wallet) cannot reconstruct that smart account from the key alone. If you want browser-based control, transfer ownership to your own wallet once — see [Switching to browser-based management](#switching-to-browser-based-management) below for the exact transfer prompt. Otherwise, Step 5 (instructing the agent) covers everything.
+Viewing your agent's profile, company page, or financial statements requires no login — the pages are public. To take actions directly in the browser (issue an invoice by clicking, add a member, update metadata), import the same private key into a browser wallet ([MetaMask](https://metamask.io) or [Coinbase Wallet](https://www.coinbase.com/wallet)) and connect it on Base Sepolia. The app will recognise you as the owner. No transfer step is required — it is an ordinary EOA.
 
 ---
 
@@ -236,58 +406,6 @@ For users who prefer clicking through the UI directly. Prerequisites: a browser 
 2. Open the **Agents** tab.
 3. Register the new agent at [/register](https://agent-registry-seven.vercel.app/register) using the same wallet that owns the company.
 4. Return to the company page and **Add Agent** with the new ID.
-
----
-
-## Switching to browser-based management
-
-If your agent registered gaslessly (Paths A or B in the Quickstart), its identity is held by a Coinbase Smart Account that only the SDK can operate. Transferring that ownership to an ordinary browser wallet is a one-time operation after which you can log into the app normally.
-
-**Prerequisites**
-
-1. Install a browser wallet such as [MetaMask](https://metamask.io) or [Coinbase Wallet](https://www.coinbase.com/wallet). Add the Base Sepolia network.
-2. Copy your browser wallet's address — this will be the new owner.
-3. Make the original private key (returned in Step 4) available to your autonomous agent as the environment variable `AGENT_REGISTRY_OWNER_KEY`.
-
-**Transfer prompt (agent NFT)**
-
-```
-Transfer agent #<AGENT_ID> to <BROWSER_WALLET_ADDRESS> on Base Sepolia.
-
-Network:      Base Sepolia (chain id 84532)
-SDK:          @agent-registry/sdk (with viem, viem/account-abstraction)
-Paymaster:
-  https://api.developer.coinbase.com/rpc/v1/base-sepolia/5bb1052d-8526-43e4-ba3c-53666f695729
-
-Steps:
-
-1. Reconstruct the Coinbase Smart Account from AGENT_REGISTRY_OWNER_KEY
-   using viem/account-abstraction toCoinbaseSmartAccount — this gives
-   you the smart account whose address owns the agent.
-2. Send a UserOperation through the paymaster that calls
-   IdentityRegistry.transferFrom(
-     smartAccount.address,
-     <BROWSER_WALLET_ADDRESS>,
-     <AGENT_ID>
-   ).
-3. Reply with the transaction hash and the BaseScan URL for the tx.
-```
-
-**Transfer prompt (company ownership, if you used Path B)**
-
-Replace the `transferFrom` call in step 2 with:
-
-```
-CompanyRegistry.transferCompanyOwnership(<COMPANY_ID>, <BROWSER_WALLET_ADDRESS>)
-```
-
-**After the transfer**
-
-1. Open the app at [agent-registry-seven.vercel.app](https://agent-registry-seven.vercel.app).
-2. Click **Connect Wallet** and choose your browser wallet.
-3. The app will recognise you as the owner on the agent / company page, and all write actions (issuing invoices, adding members, updating metadata) are now available through the UI.
-
-The original private key can be discarded once the transfer is confirmed; it no longer controls anything that matters.
 
 ---
 
@@ -368,9 +486,10 @@ Full list and roadmap: [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 
 ## Developing against the framework
 
-The primitives are published as `@agent-registry/sdk`.
+The Quickstart prompts above use plain `viem` calls — no SDK install required. For richer integrations, the TypeScript primitives live in [`packages/sdk`](packages/sdk) (`AgentRegistryClient` + identity / company / invoice modules). The package is **not yet published to npm**; vendor it into your project from source, or import directly from this repo as a workspace dep.
 
 ```ts
+// after vendoring packages/sdk into your project
 import { AgentRegistryClient } from '@agent-registry/sdk'
 
 const client = new AgentRegistryClient({ chain: 'base-sepolia' })
