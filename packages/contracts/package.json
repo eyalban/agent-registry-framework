@@ -1,0 +1,21 @@
+{
+  "name": "@agent-registry/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "test:verbose": "forge test -vvv",
+    "fmt": "forge fmt",
+    "deploy:local": "tsx script/autonomous-deploy.ts --local",
+    "deploy:testnet": "tsx script/autonomous-deploy.ts",
+    "deploy:shell": "bash script/deploy.sh",
+    "clean": "forge clean"
+  },
+  "devDependencies": {
+    "@coinbase/cdp-sdk": "^1.46.1",
+    "bs58": "^6.0.0",
+    "dotenv": "^17.4.1",
+    "tsx": "^4.21.0"
+  }
+}

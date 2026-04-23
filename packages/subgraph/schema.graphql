@@ -1,0 +1,240 @@
+"""
+Agent Registry Subgraph Schema
+Indexes the canonical ERC-8004 Identity Registry, Reputation Registry,
+and the custom AgentRegistryWrapper on Base Sepolia.
+"""
+
+# =============================================================================
+# Identity Registry Entities
+# =============================================================================
+
+type Agent @entity(immutable: false) {
+  "agentId as string"
+  id: ID!
+  "Numeric agent ID (token ID)"
+  agentId: BigInt!
+  "Current owner address"
+  owner: Bytes!
+  "ERC-8004 registration file URI (from tokenURI)"
+  agentURI: String!
+  "Agent wallet address (from setAgentWallet)"
+  wallet: Bytes
+  "Discovery tags (from wrapper)"
+  tags: [String!]!
+  "Whether the agent is featured (from wrapper)"
+  featured: Boolean!
+  "Last activity block number (from wrapper)"
+  lastActivityBlock: BigInt!
+  "Block number when registered"
+  registeredAtBlock: BigInt!
+  "Timestamp when registered"
+  registeredAt: BigInt!
+  "Registration transaction hash"
+  registeredTx: Bytes!
+  "Whether registered through the wrapper"
+  registeredViaWrapper: Boolean!
+  "On-chain metadata entries"
+  metadata: [AgentMetadata!]! @derivedFrom(field: "agent")
+  "Feedback received by this agent"
+  feedbackReceived: [Feedback!]! @derivedFrom(field: "agent")
+  "Feedback given by this agent's owner"
+  feedbackGiven: [Feedback!]! @derivedFrom(field: "client")
+  "Validation requests for this agent"
+  validations: [ValidationRequest!]! @derivedFrom(field: "agent")
+}
+
+type AgentMetadata @entity(immutable: false) {
+  "agentId-metadataKey"
+  id: ID!
+  "The agent this metadata belongs to"
+  agent: Agent!
+  "Metadata key"
+  key: String!
+  "Metadata value (hex encoded)"
+  value: Bytes!
+  "Block when last updated"
+  updatedAtBlock: BigInt!
+}
+
+# =============================================================================
+# Reputation Registry Entities
+# =============================================================================
+
+type Feedback @entity(immutable: false) {
+  "agentId-clientAddress-feedbackIndex"
+  id: ID!
+  "The agent receiving feedback"
+  agent: Agent!
+  "Address of the feedback giver"
+  client: Agent
+  "Client address (raw, for cases where client is not a registered agent)"
+  clientAddress: Bytes!
+  "Feedback index for this client-agent pair"
+  feedbackIndex: BigInt!
+  "Feedback value (can be negative)"
+  value: BigInt!
+  "Decimal places for the value"
+  valueDecimals: Int!
+  "Primary tag"
+  tag1: String!
+  "Secondary tag"
+  tag2: String!
+  "Service endpoint the feedback is about"
+  endpoint: String!
+  "URI to detailed feedback (e.g., IPFS)"
+  feedbackURI: String!
+  "Hash of the off-chain feedback data"
+  feedbackHash: Bytes!
+  "Whether this feedback has been revoked"
+  revoked: Boolean!
+  "Timestamp of the feedback"
+  createdAt: BigInt!
+  "Block number of the feedback"
+  createdAtBlock: BigInt!
+  "Transaction hash"
+  transactionHash: Bytes!
+  "Responses to this feedback"
+  responses: [FeedbackResponse!]! @derivedFrom(field: "feedback")
+}
+
+type FeedbackResponse @entity(immutable: true) {
+  "agentId-clientAddress-feedbackIndex-responder"
+  id: ID!
+  "The feedback being responded to"
+  feedback: Feedback!
+  "Address of the responder"
+  responder: Bytes!
+  "URI to the response content"
+  responseURI: String!
+  "Hash of the response data"
+  responseHash: Bytes!
+  "Timestamp of the response"
+  createdAt: BigInt!
+  "Transaction hash"
+  transactionHash: Bytes!
+}
+
+# =============================================================================
+# Validation Registry Entities (placeholder for Phase 3)
+# =============================================================================
+
+type ValidationRequest @entity(immutable: false) {
+  "requestHash"
+  id: ID!
+  "The agent being validated"
+  agent: Agent!
+  "Validator address"
+  validatorAddress: Bytes!
+  "URI describing the validation request"
+  requestURI: String!
+  "Hash of the request"
+  requestHash: Bytes!
+  "Timestamp of the request"
+  createdAt: BigInt!
+  "Transaction hash"
+  transactionHash: Bytes!
+  "Responses from the validator"
+  responses: [ValidationResponse!]! @derivedFrom(field: "request")
+}
+
+type ValidationResponse @entity(immutable: true) {
+  "requestHash-responseIndex"
+  id: ID!
+  "The validation request"
+  request: ValidationRequest!
+  "Score (0-100)"
+  score: Int!
+  "URI to detailed response"
+  responseURI: String
+  "Timestamp"
+  createdAt: BigInt!
+  "Transaction hash"
+  transactionHash: Bytes!
+}
+
+# =============================================================================
+# Agentic Companies (CompanyRegistry)
+# =============================================================================
+
+type Company @entity(immutable: false) {
+  "companyId as string"
+  id: ID!
+  "Numeric company id"
+  companyId: BigInt!
+  "Initial owner (founder)"
+  founder: Bytes!
+  "Current owner (may differ after ownership transfer)"
+  owner: Bytes!
+  "Off-chain metadata URI (IPFS JSON with name/description/jurisdictionCode)"
+  metadataURI: String!
+  "Block this company was created in"
+  createdAtBlock: BigInt!
+  "Timestamp of creation"
+  createdAt: BigInt!
+  "Tx hash of creation"
+  createdTx: Bytes!
+  "Active and historical members"
+  members: [CompanyMember!]! @derivedFrom(field: "company")
+  "Active and historical treasuries"
+  treasuries: [CompanyTreasury!]! @derivedFrom(field: "company")
+}
+
+type CompanyMember @entity(immutable: false) {
+  "companyId-agentId"
+  id: ID!
+  company: Company!
+  agent: Agent!
+  "Added at block"
+  addedAtBlock: BigInt!
+  "Timestamp added"
+  addedAt: BigInt!
+  "Tx hash of AgentAdded"
+  addedTx: Bytes!
+  "Timestamp removed (null if still active)"
+  removedAt: BigInt
+  "Tx hash of AgentRemoved (null if still active)"
+  removedTx: Bytes
+}
+
+type CompanyTreasury @entity(immutable: false) {
+  "companyId-address (lowercase)"
+  id: ID!
+  company: Company!
+  "Treasury EOA or contract address"
+  address: Bytes!
+  "Added at block"
+  addedAtBlock: BigInt!
+  "Timestamp added"
+  addedAt: BigInt!
+  "Tx hash of TreasuryAdded"
+  addedTx: Bytes!
+  "Timestamp removed (null if still active)"
+  removedAt: BigInt
+  "Tx hash of TreasuryRemoved (null if still active)"
+  removedTx: Bytes
+}
+
+# =============================================================================
+# Protocol-wide Statistics
+# =============================================================================
+
+type ProtocolStats @entity(immutable: false) {
+  "Singleton: 'protocol'"
+  id: ID!
+  "Total registered agents"
+  totalAgents: BigInt!
+  "Total feedback entries"
+  totalFeedback: BigInt!
+  "Total revoked feedback entries"
+  totalRevokedFeedback: BigInt!
+  "Total validation requests"
+  totalValidations: BigInt!
+  "Total unique agent owners"
+  uniqueOwners: BigInt!
+  "Total agents registered via wrapper"
+  totalWrapperRegistrations: BigInt!
+  "Total agentic companies created via CompanyRegistry"
+  totalCompanies: BigInt!
+  "Block of last update"
+  lastUpdatedBlock: BigInt!
+}

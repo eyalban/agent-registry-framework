@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Registry — Architecture & Flow Diagrams</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2e;
+    --text: #e2e2ef;
+    --muted: #8888a0;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --green: #22c55e;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+  h1 {
+    text-align: center; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { text-align: center; color: var(--muted); margin-bottom: 3rem; font-size: 1.1rem; }
+  .tabs { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2rem; }
+  .tab {
+    padding: 0.6rem 1.2rem; border: 1px solid var(--border); border-radius: 0.75rem;
+    background: var(--surface); color: var(--muted); cursor: pointer; font-size: 0.9rem;
+    font-weight: 500; transition: all 0.2s;
+  }
+  .tab:hover { border-color: var(--blue); color: var(--text); }
+  .tab.active { background: linear-gradient(135deg, var(--blue), var(--purple)); color: white; border-color: transparent; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .diagram {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 1rem;
+    padding: 2rem; overflow-x: auto; margin-bottom: 2rem;
+  }
+  .diagram h2 { font-size: 1.4rem; margin-bottom: 1.5rem; color: var(--text); }
+  svg { display: block; margin: 0 auto; }
+  .legend { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  .legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+  .info-card { background: var(--bg); border: 1px solid var(--border); border-radius: 0.75rem; padding: 1.25rem; }
+  .info-card h4 { font-size: 0.95rem; margin-bottom: 0.5rem; }
+  .info-card p { font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Agent Blockchain Registry</h1>
+<p class="subtitle">ERC-8004 Trustless Agents on Base — Architecture &amp; Process Flows</p>
+
+<div class="tabs">
+  <button class="tab active" onclick="showPanel('system')">System Architecture</button>
+  <button class="tab" onclick="showPanel('register')">Registration Flow</button>
+  <button class="tab" onclick="showPanel('data')">Data Flow</button>
+  <button class="tab" onclick="showPanel('reputation')">Reputation Flow</button>
+  <button class="tab" onclick="showPanel('monorepo')">Monorepo Structure</button>
+  <button class="tab" onclick="showPanel('deploy')">Deployment Pipeline</button>
+</div>
+
+<!-- ==================== SYSTEM ARCHITECTURE ==================== -->
+<div id="panel-system" class="panel active">
+<div class="diagram">
+<h2>System Architecture Overview</h2>
+<svg viewBox="0 0 1200 780" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6366f1"/></marker>
+    <marker id="arr-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#22c55e"/></marker>
+    <marker id="arr-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#f59e0b"/></marker>
+    <marker id="arr-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#06b6d4"/></marker>
+  </defs>
+
+  <!-- ===== LAYER 1: Users & Agents ===== -->
+  <rect x="30" y="20" width="1140" height="100" rx="12" fill="#1a1a2e" stroke="#2d2d44"/>
+  <text x="55" y="48" fill="#8888a0" font-size="11" font-weight="600" letter-spacing="1">USERS &amp; AGENTS</text>
+  <rect x="55" y="60" width="140" height="44" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="125" y="86" fill="#93c5fd" font-size="12" font-weight="600" text-anchor="middle">Human Users</text>
+  <rect x="215" y="60" width="160" height="44" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="295" y="86" fill="#93c5fd" font-size="12" font-weight="600" text-anchor="middle">OpenClaw Agents</text>
+  <rect x="395" y="60" width="160" height="44" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="475" y="86" fill="#93c5fd" font-size="12" font-weight="600" text-anchor="middle">Other AI Agents</text>
+  <rect x="580" y="60" width="190" height="44" rx="8" fill="#2d1f3d" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="675" y="86" fill="#c4b5fd" font-size="12" font-weight="600" text-anchor="middle">@agent-registry/sdk</text>
+  <rect x="795" y="60" width="160" height="44" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="875" y="86" fill="#93c5fd" font-size="12" font-weight="600" text-anchor="middle">REST API Clients</text>
+
+  <!-- ===== LAYER 2: Application ===== -->
+  <rect x="30" y="145" width="1140" height="210" rx="12" fill="#1a1a2e" stroke="#2d2d44"/>
+  <text x="55" y="173" fill="#8888a0" font-size="11" font-weight="600" letter-spacing="1">APPLICATION LAYER (Vercel)</text>
+
+  <!-- Next.js -->
+  <rect x="55" y="190" width="520" height="140" rx="10" fill="#0f2518" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="75" y="216" fill="#86efac" font-size="14" font-weight="700">Next.js 16 App</text>
+  <rect x="75" y="228" width="110" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="130" y="247" fill="#4ade80" font-size="10" text-anchor="middle">App Router</text>
+  <rect x="195" y="228" width="110" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="250" y="247" fill="#4ade80" font-size="10" text-anchor="middle">API Routes</text>
+  <rect x="315" y="228" width="70" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="350" y="247" fill="#4ade80" font-size="10" text-anchor="middle">SSE</text>
+  <rect x="395" y="228" width="165" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="478" y="247" fill="#4ade80" font-size="10" text-anchor="middle">wagmi + RainbowKit</text>
+  <rect x="75" y="270" width="150" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="150" y="289" fill="#4ade80" font-size="10" text-anchor="middle">Agent Explorer</text>
+  <rect x="235" y="270" width="160" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="315" y="289" fill="#4ade80" font-size="10" text-anchor="middle">Registration Wizard</text>
+  <rect x="405" y="270" width="155" height="30" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="483" y="289" fill="#4ade80" font-size="10" text-anchor="middle">Tx Explorer + Charts</text>
+
+  <!-- Redis -->
+  <rect x="610" y="190" width="240" height="60" rx="10" fill="#1f1525" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="730" y="214" fill="#f9a8d4" font-size="13" font-weight="600" text-anchor="middle">Upstash Redis</text>
+  <text x="730" y="234" fill="#9f7aea" font-size="10" text-anchor="middle">Cache | Rate Limit | SSE Buffer</text>
+
+  <!-- Postgres -->
+  <rect x="610" y="265" width="240" height="60" rx="10" fill="#1a1520" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="730" y="289" fill="#d8b4fe" font-size="13" font-weight="600" text-anchor="middle">Neon Postgres</text>
+  <text x="730" y="309" fill="#9f7aea" font-size="10" text-anchor="middle">API Keys | Full-Text Search</text>
+
+  <!-- IPFS -->
+  <rect x="885" y="190" width="260" height="60" rx="10" fill="#1a2520" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="1015" y="214" fill="#67e8f9" font-size="13" font-weight="600" text-anchor="middle">Pinata (IPFS)</text>
+  <text x="1015" y="234" fill="#22d3ee" font-size="10" text-anchor="middle">Agent Card JSON Storage</text>
+
+  <!-- ===== LAYER 3: Blockchain ===== -->
+  <rect x="30" y="380" width="1140" height="190" rx="12" fill="#1a1a2e" stroke="#2d2d44"/>
+  <text x="55" y="408" fill="#8888a0" font-size="11" font-weight="600" letter-spacing="1">BLOCKCHAIN LAYER (Base Sepolia / Base)</text>
+
+  <!-- ERC-8004 Canonical -->
+  <rect x="55" y="425" width="320" height="120" rx="10" fill="#1a1a0f" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="75" y="450" fill="#fcd34d" font-size="13" font-weight="700">ERC-8004 Canonical</text>
+  <rect x="75" y="462" width="135" height="30" rx="6" fill="#422006" stroke="#d97706"/>
+  <text x="143" y="481" fill="#fbbf24" font-size="10" text-anchor="middle">Identity Registry</text>
+  <rect x="220" y="462" width="140" height="30" rx="6" fill="#422006" stroke="#d97706"/>
+  <text x="290" y="481" fill="#fbbf24" font-size="10" text-anchor="middle">Reputation Registry</text>
+  <text x="215" y="520" fill="#b45309" font-size="9" text-anchor="middle">0x8004A818... | 0x8004B663...</text>
+
+  <!-- Custom Wrapper -->
+  <rect x="410" y="425" width="260" height="120" rx="10" fill="#0f1a2e" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="430" y="450" fill="#a5b4fc" font-size="13" font-weight="700">Custom Wrapper</text>
+  <rect x="430" y="462" width="220" height="30" rx="6" fill="#1e1b4b" stroke="#4f46e5"/>
+  <text x="540" y="481" fill="#818cf8" font-size="10" text-anchor="middle">AgentRegistryWrapper.sol</text>
+  <text x="540" y="520" fill="#6366f1" font-size="9" text-anchor="middle">Tags | Fees | Featured | Activity</text>
+
+  <!-- The Graph -->
+  <rect x="705" y="425" width="230" height="120" rx="10" fill="#0f1a1a" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="725" y="450" fill="#67e8f9" font-size="13" font-weight="700">The Graph</text>
+  <rect x="725" y="462" width="190" height="30" rx="6" fill="#083344" stroke="#0891b2"/>
+  <text x="820" y="481" fill="#22d3ee" font-size="10" text-anchor="middle">Subgraph Indexer</text>
+  <text x="820" y="520" fill="#06b6d4" font-size="9" text-anchor="middle">7 Entities | 10 Event Handlers</text>
+
+  <!-- x402 -->
+  <rect x="970" y="425" width="180" height="60" rx="10" fill="#2a1a0a" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="1060" y="450" fill="#fcd34d" font-size="12" font-weight="600" text-anchor="middle">x402 Protocol</text>
+  <text x="1060" y="470" fill="#d97706" font-size="10" text-anchor="middle">Agent-to-Agent Payments</text>
+
+  <!-- ===== LAYER 4: SDK ===== -->
+  <rect x="30" y="595" width="1140" height="85" rx="12" fill="#1a1a2e" stroke="#2d2d44"/>
+  <text x="55" y="623" fill="#8888a0" font-size="11" font-weight="600" letter-spacing="1">SDK LAYER (npm: @agent-registry/sdk)</text>
+  <rect x="55" y="635" width="190" height="30" rx="6" fill="#2d1f3d" stroke="#8b5cf6"/>
+  <text x="150" y="654" fill="#c4b5fd" font-size="11" text-anchor="middle">IdentityClient</text>
+  <rect x="265" y="635" width="190" height="30" rx="6" fill="#2d1f3d" stroke="#8b5cf6"/>
+  <text x="360" y="654" fill="#c4b5fd" font-size="11" text-anchor="middle">ReputationClient</text>
+  <rect x="475" y="635" width="190" height="30" rx="6" fill="#2d1f3d" stroke="#8b5cf6"/>
+  <text x="570" y="654" fill="#c4b5fd" font-size="11" text-anchor="middle">ValidationClient</text>
+  <rect x="685" y="635" width="190" height="30" rx="6" fill="#2d1f3d" stroke="#8b5cf6"/>
+  <text x="780" y="654" fill="#c4b5fd" font-size="11" text-anchor="middle">PaymentsClient</text>
+  <rect x="895" y="635" width="190" height="30" rx="6" fill="#2d1f3d" stroke="#8b5cf6"/>
+  <text x="990" y="654" fill="#c4b5fd" font-size="11" text-anchor="middle">EventsClient (SSE)</text>
+
+  <!-- ===== ARROWS ===== -->
+  <!-- Users → App -->
+  <line x1="295" y1="104" x2="295" y2="188" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr)"/>
+  <!-- SDK → App -->
+  <line x1="675" y1="104" x2="675" y2="188" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arr)"/>
+  <!-- App → Blockchain (write) -->
+  <path d="M300 330 L300 423" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-g)"/>
+  <text x="240" y="385" fill="#22c55e" font-size="10" font-weight="500">write txs</text>
+  <!-- App → Subgraph (query) -->
+  <path d="M560 310 L760 423" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arr-c)"/>
+  <text x="630" y="355" fill="#06b6d4" font-size="10" font-weight="500">query</text>
+  <!-- App → IPFS -->
+  <path d="M575 230 L883 220" stroke="#06b6d4" stroke-width="1" stroke-dasharray="5" marker-end="url(#arr-c)"/>
+  <text x="710" y="215" fill="#06b6d4" font-size="10">fetch cards</text>
+  <!-- Wrapper → Canonical -->
+  <line x1="410" y1="480" x2="377" y2="480" stroke="#6366f1" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="383" y="473" fill="#6366f1" font-size="9">calls</text>
+  <!-- Contracts → Subgraph (events) -->
+  <line x1="670" y1="480" x2="703" y2="480" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr-o)"/>
+  <text x="673" y="473" fill="#f59e0b" font-size="9">events</text>
+</svg>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>Users &amp; Agents</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Next.js Application</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Blockchain Contracts</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6366f1"></div>Custom Wrapper</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>The Graph Indexer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>TypeScript SDK</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>Cache Layer</div>
+</div>
+</div>
+</div>
+
+<!-- ==================== REGISTRATION FLOW ==================== -->
+<div id="panel-register" class="panel">
+<div class="diagram">
+<h2>Agent Registration Flow (Step by Step)</h2>
+<svg viewBox="0 0 1100 680" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- Swim lane backgrounds -->
+  <rect x="0" y="0" width="1100" height="80" fill="#111827" stroke="#1f2937"/>
+  <text x="25" y="45" fill="#9ca3af" font-size="13" font-weight="700">User / Agent</text>
+
+  <rect x="0" y="80" width="1100" height="100" fill="#0c1322" stroke="#1f2937"/>
+  <text x="25" y="135" fill="#60a5fa" font-size="13" font-weight="700">Frontend</text>
+
+  <rect x="0" y="180" width="1100" height="90" fill="#0d1117" stroke="#1f2937"/>
+  <text x="25" y="230" fill="#34d399" font-size="13" font-weight="700">IPFS</text>
+
+  <rect x="0" y="270" width="1100" height="160" fill="#110d08" stroke="#1f2937"/>
+  <text x="25" y="310" fill="#fbbf24" font-size="13" font-weight="700">Blockchain</text>
+
+  <rect x="0" y="430" width="1100" height="90" fill="#081318" stroke="#1f2937"/>
+  <text x="25" y="480" fill="#22d3ee" font-size="13" font-weight="700">Indexer</text>
+
+  <rect x="0" y="520" width="1100" height="80" fill="#0c0c18" stroke="#1f2937"/>
+  <text x="25" y="565" fill="#a78bfa" font-size="13" font-weight="700">Result</text>
+
+  <!-- Step 1: Fill card -->
+  <rect x="160" y="18" width="160" height="44" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="240" y="44" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">1. Fill Agent Card</text>
+
+  <!-- Step 2: Validate -->
+  <rect x="160" y="96" width="160" height="44" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="240" y="116" fill="#86efac" font-size="10" font-weight="600" text-anchor="middle">2. Validate with</text>
+  <text x="240" y="130" fill="#86efac" font-size="10" font-weight="600" text-anchor="middle">Zod Schema</text>
+  <line x1="240" y1="62" x2="240" y2="94" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Step 3: Upload IPFS -->
+  <rect x="350" y="200" width="170" height="44" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+  <text x="435" y="226" fill="#6ee7b7" font-size="11" font-weight="600" text-anchor="middle">3. Upload JSON to IPFS</text>
+  <line x1="320" y1="118" x2="348" y2="222" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- Step 3b: Get URI -->
+  <rect x="560" y="200" width="160" height="44" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+  <text x="640" y="226" fill="#6ee7b7" font-size="11" font-weight="600" text-anchor="middle">Returns ipfs://Qm...</text>
+  <line x1="520" y1="222" x2="558" y2="222" stroke="#10b981" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- Step 4: Build tx -->
+  <rect x="420" y="96" width="190" height="44" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="515" y="122" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">4. Build Transaction</text>
+  <line x1="640" y1="200" x2="515" y2="142" stroke="#22c55e" stroke-width="1" stroke-dasharray="4"/>
+
+  <!-- Step 5: Sign -->
+  <rect x="660" y="18" width="170" height="44" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="745" y="44" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">5. Sign with Wallet</text>
+  <line x1="610" y1="110" x2="658" y2="48" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Step 6: Wrapper -->
+  <rect x="350" y="300" width="280" height="55" rx="10" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
+  <text x="490" y="324" fill="#a5b4fc" font-size="13" font-weight="700" text-anchor="middle">6. Wrapper.registerAgent()</text>
+  <text x="490" y="342" fill="#818cf8" font-size="10" text-anchor="middle">URI + metadata + tags + fee</text>
+  <line x1="745" y1="62" x2="560" y2="298" stroke="#6366f1" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Step 7: Identity Registry -->
+  <rect x="680" y="300" width="300" height="55" rx="10" fill="#422006" stroke="#f59e0b" stroke-width="2"/>
+  <text x="830" y="324" fill="#fcd34d" font-size="13" font-weight="700" text-anchor="middle">7. IdentityRegistry.register()</text>
+  <text x="830" y="342" fill="#d97706" font-size="10" text-anchor="middle">Mints ERC-721 NFT</text>
+  <line x1="630" y1="328" x2="678" y2="328" stroke="#f59e0b" stroke-width="2" marker-end="url(#arr-o)"/>
+
+  <!-- Step 8: Transfer -->
+  <rect x="680" y="370" width="300" height="40" rx="6" fill="#422006" stroke="#d97706"/>
+  <text x="830" y="394" fill="#fbbf24" font-size="10" text-anchor="middle">8. transferFrom(wrapper, user, tokenId)</text>
+
+  <!-- Step 9: Index -->
+  <rect x="300" y="455" width="220" height="44" rx="8" fill="#083344" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="410" y="475" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">9. Index Events</text>
+  <text x="410" y="491" fill="#22d3ee" font-size="9" text-anchor="middle">Registered + Transfer + WrapperTags</text>
+  <line x1="490" y1="355" x2="410" y2="453" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arr-c)"/>
+
+  <!-- Step 10: Create entity -->
+  <rect x="570" y="455" width="220" height="44" rx="8" fill="#083344" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="680" y="475" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">10. Create Agent Entity</text>
+  <text x="680" y="491" fill="#22d3ee" font-size="9" text-anchor="middle">+ update ProtocolStats</text>
+  <line x1="520" y1="477" x2="568" y2="477" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arr-c)"/>
+
+  <!-- Step 11: UI -->
+  <rect x="350" y="540" width="350" height="44" rx="8" fill="#1e1b4b" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="525" y="566" fill="#c4b5fd" font-size="12" font-weight="600" text-anchor="middle">11. Agent appears in Registry Explorer</text>
+  <line x1="600" y1="499" x2="525" y2="538" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- BaseScan link -->
+  <rect x="760" y="96" width="200" height="44" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="860" y="122" fill="#86efac" font-size="10" font-weight="600" text-anchor="middle">Show BaseScan tx link</text>
+  <line x1="770" y1="62" x2="810" y2="94" stroke="#22c55e" stroke-width="1" stroke-dasharray="4"/>
+</svg>
+
+<div class="info-grid">
+  <div class="info-card">
+    <h4 style="color:#3b82f6">Agent Card JSON</h4>
+    <p>ERC-8004 registration file: name, description, image, services (A2A/MCP endpoints), x402 support, trust models. Validated by Zod schema.</p>
+  </div>
+  <div class="info-card">
+    <h4 style="color:#6366f1">Wrapper Contract</h4>
+    <p>Calls canonical register(), receives NFT, transfers to user, stores discovery tags. Collects optional 0.001 ETH fee.</p>
+  </div>
+  <div class="info-card">
+    <h4 style="color:#f59e0b">Identity NFT</h4>
+    <p>ERC-721 token on canonical Identity Registry. Owner = registering wallet. tokenURI = IPFS link to agent card.</p>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ==================== DATA FLOW ==================== -->
+<div id="panel-data" class="panel">
+<div class="diagram">
+<h2>Data Flow: Write Path vs Read Path</h2>
+<svg viewBox="0 0 1100 520" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- WRITE PATH -->
+  <text x="100" y="30" fill="#ef4444" font-size="16" font-weight="700">WRITE PATH</text>
+  <rect x="40" y="45" width="460" height="450" rx="12" fill="#1a0f0f" stroke="#7f1d1d"/>
+
+  <rect x="70" y="75" width="200" height="45" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="170" y="102" fill="#93c5fd" font-size="12" font-weight="600" text-anchor="middle">User / Agent Wallet</text>
+  <text x="300" y="102" fill="#ef4444" font-size="10">signs tx</text>
+
+  <line x1="170" y1="120" x2="170" y2="150" stroke="#ef4444" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="70" y="155" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="170" y="182" fill="#86efac" font-size="12" font-weight="600" text-anchor="middle">wagmi useWriteContract</text>
+  <text x="300" y="182" fill="#ef4444" font-size="10">sends tx</text>
+
+  <line x1="170" y1="200" x2="170" y2="230" stroke="#ef4444" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="70" y="235" width="200" height="45" rx="8" fill="#1e1b4b" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="170" y="262" fill="#a5b4fc" font-size="12" font-weight="600" text-anchor="middle">Wrapper Contract</text>
+  <text x="300" y="262" fill="#ef4444" font-size="10">delegates</text>
+
+  <line x1="170" y1="280" x2="170" y2="310" stroke="#ef4444" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="70" y="315" width="200" height="45" rx="8" fill="#422006" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="170" y="342" fill="#fcd34d" font-size="12" font-weight="600" text-anchor="middle">Canonical Registries</text>
+  <text x="300" y="342" fill="#ef4444" font-size="10">state change</text>
+
+  <line x1="170" y1="360" x2="170" y2="390" stroke="#ef4444" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="70" y="395" width="200" height="40" rx="8" fill="#0f172a" stroke="#64748b" stroke-width="1.5"/>
+  <text x="170" y="419" fill="#94a3b8" font-size="11" font-weight="600" text-anchor="middle">Emit Events</text>
+
+  <line x1="270" y1="415" x2="330" y2="415" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr-o)"/>
+
+  <rect x="330" y="395" width="150" height="40" rx="8" fill="#083344" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="405" y="419" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">Subgraph</text>
+
+  <rect x="290" y="448" width="190" height="30" rx="6" fill="#083344" stroke="#0891b2"/>
+  <text x="385" y="467" fill="#22d3ee" font-size="10" text-anchor="middle">Agent + Feedback entities</text>
+
+  <!-- READ PATH -->
+  <text x="660" y="30" fill="#22c55e" font-size="16" font-weight="700">READ PATH</text>
+  <rect x="580" y="45" width="480" height="450" rx="12" fill="#0a1a0f" stroke="#14532d"/>
+
+  <rect x="620" y="75" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="720" y="102" fill="#86efac" font-size="12" font-weight="600" text-anchor="middle">UI Component</text>
+  <text x="850" y="102" fill="#22c55e" font-size="10">renders</text>
+
+  <line x1="720" y1="120" x2="720" y2="150" stroke="#22c55e" stroke-width="2" marker-end="url(#arr-g)"/>
+
+  <rect x="620" y="155" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="720" y="182" fill="#86efac" font-size="12" font-weight="600" text-anchor="middle">TanStack Query Hook</text>
+  <text x="850" y="182" fill="#22c55e" font-size="10">auto-refetch</text>
+
+  <line x1="720" y1="200" x2="720" y2="230" stroke="#22c55e" stroke-width="2" marker-end="url(#arr-g)"/>
+
+  <rect x="620" y="235" width="200" height="45" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="720" y="262" fill="#86efac" font-size="12" font-weight="600" text-anchor="middle">API Route / Direct</text>
+
+  <!-- Cache check -->
+  <line x1="820" y1="258" x2="870" y2="258" stroke="#ec4899" stroke-width="1.5"/>
+  <rect x="870" y="235" width="160" height="45" rx="8" fill="#1f1525" stroke="#ec4899" stroke-width="1.5"/>
+  <text x="950" y="255" fill="#f9a8d4" font-size="11" font-weight="600" text-anchor="middle">Redis Cache</text>
+  <text x="950" y="272" fill="#ec4899" font-size="10" text-anchor="middle">30s TTL</text>
+
+  <text x="840" y="300" fill="#ec4899" font-size="9">MISS &#8595;</text>
+
+  <line x1="720" y1="280" x2="720" y2="320" stroke="#22c55e" stroke-width="2" marker-end="url(#arr-g)"/>
+
+  <rect x="620" y="325" width="200" height="45" rx="8" fill="#083344" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="720" y="352" fill="#67e8f9" font-size="12" font-weight="600" text-anchor="middle">Subgraph GraphQL</text>
+
+  <line x1="720" y1="370" x2="720" y2="400" stroke="#22c55e" stroke-width="2" marker-end="url(#arr-g)"/>
+
+  <rect x="620" y="405" width="200" height="45" rx="8" fill="#1a2520" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="720" y="425" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">Fetch Agent Card</text>
+  <text x="720" y="442" fill="#06b6d4" font-size="10" text-anchor="middle">from IPFS (5min cache)</text>
+
+  <line x1="720" y1="450" x2="720" y2="470" stroke="#22c55e" stroke-width="1" stroke-dasharray="4"/>
+  <rect x="640" y="468" width="160" height="26" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="720" y="486" fill="#4ade80" font-size="10" text-anchor="middle">Return typed data</text>
+</svg>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Write Path (state changes)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>Read Path (queries)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>Cache Layer</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>Data Sources</div>
+</div>
+</div>
+</div>
+
+<!-- ==================== REPUTATION FLOW ==================== -->
+<div id="panel-reputation" class="panel">
+<div class="diagram">
+<h2>Reputation &amp; Feedback Lifecycle</h2>
+<svg viewBox="0 0 1100 500" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- GIVE FEEDBACK -->
+  <text x="50" y="30" fill="#f59e0b" font-size="15" font-weight="700">GIVE FEEDBACK</text>
+  <rect x="30" y="45" width="520" height="420" rx="12" fill="#1a170f" stroke="#78350f"/>
+
+  <rect x="55" y="75" width="170" height="50" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="140" y="98" fill="#93c5fd" font-size="11" font-weight="600" text-anchor="middle">Reviewer</text>
+  <text x="140" y="114" fill="#93c5fd" font-size="10" text-anchor="middle">(User or Agent)</text>
+
+  <line x1="225" y1="100" x2="270" y2="100" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr-o)"/>
+
+  <rect x="270" y="75" width="260" height="50" rx="8" fill="#422006" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="400" y="96" fill="#fcd34d" font-size="11" font-weight="700" text-anchor="middle">ReputationRegistry</text>
+  <text x="400" y="112" fill="#d97706" font-size="9" text-anchor="middle">.giveFeedback(agentId, value, decimals, tag1, tag2, ...)</text>
+
+  <line x1="400" y1="125" x2="400" y2="155" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr-o)"/>
+
+  <rect x="270" y="160" width="260" height="35" rx="6" fill="#083344" stroke="#06b6d4"/>
+  <text x="400" y="182" fill="#22d3ee" font-size="10" text-anchor="middle">NewFeedback event &#8594; subgraph indexes</text>
+
+  <line x1="400" y1="195" x2="400" y2="220" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arr-c)"/>
+
+  <rect x="270" y="225" width="260" height="35" rx="6" fill="#083344" stroke="#06b6d4"/>
+  <text x="400" y="247" fill="#22d3ee" font-size="10" text-anchor="middle">Feedback entity created + stats updated</text>
+
+  <!-- Revoke -->
+  <rect x="55" y="295" width="220" height="50" rx="8" fill="#7f1d1d" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="165" y="316" fill="#fca5a5" font-size="11" font-weight="600" text-anchor="middle">revokeFeedback()</text>
+  <text x="165" y="334" fill="#ef4444" font-size="9" text-anchor="middle">Only original reviewer can revoke</text>
+
+  <!-- Respond -->
+  <rect x="300" y="295" width="230" height="50" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="415" y="316" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">appendResponse()</text>
+  <text x="415" y="334" fill="#22c55e" font-size="9" text-anchor="middle">Agent owner responds to feedback</text>
+
+  <!-- Summary -->
+  <rect x="55" y="380" width="475" height="55" rx="8" fill="#1e1b4b" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="293" y="404" fill="#c4b5fd" font-size="12" font-weight="600" text-anchor="middle">getSummary(agentId, clients[], tag1, tag2)</text>
+  <text x="293" y="422" fill="#8b5cf6" font-size="10" text-anchor="middle">Returns: count + aggregated value + decimals</text>
+
+  <!-- VIEW REPUTATION -->
+  <text x="600" y="30" fill="#22c55e" font-size="15" font-weight="700">VIEW REPUTATION</text>
+  <rect x="580" y="45" width="490" height="420" rx="12" fill="#0a1a0f" stroke="#14532d"/>
+
+  <rect x="610" y="75" width="210" height="45" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="715" y="102" fill="#86efac" font-size="12" font-weight="600" text-anchor="middle">Agent Profile Page</text>
+
+  <line x1="715" y1="120" x2="715" y2="155" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <rect x="610" y="160" width="210" height="35" rx="6" fill="#083344" stroke="#06b6d4"/>
+  <text x="715" y="182" fill="#22d3ee" font-size="10" text-anchor="middle">Query subgraph for feedback</text>
+
+  <line x1="715" y1="195" x2="715" y2="225" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr-g)"/>
+
+  <!-- Trust Score Display -->
+  <rect x="610" y="230" width="440" height="110" rx="10" fill="#0f172a" stroke="#334155"/>
+  <text x="635" y="255" fill="#e2e8f0" font-size="13" font-weight="700">Trust Score Card</text>
+
+  <rect x="635" y="270" width="80" height="50" rx="6" fill="#14532d" stroke="#16a34a"/>
+  <text x="675" y="295" fill="#4ade80" font-size="20" font-weight="700" text-anchor="middle">92</text>
+  <text x="675" y="312" fill="#22c55e" font-size="9" text-anchor="middle">SCORE</text>
+
+  <text x="740" y="288" fill="#94a3b8" font-size="11">&#9650; 847 positive</text>
+  <text x="740" y="306" fill="#94a3b8" font-size="11">&#9660; 73 negative</text>
+  <text x="740" y="324" fill="#94a3b8" font-size="11">&#9644; 12 revoked</text>
+
+  <text x="890" y="288" fill="#94a3b8" font-size="10">Tags:</text>
+  <rect x="890" y="295" width="55" height="20" rx="4" fill="#1e1b4b" stroke="#4f46e5"/>
+  <text x="918" y="309" fill="#818cf8" font-size="9" text-anchor="middle">reliable</text>
+  <rect x="950" y="295" width="40" height="20" rx="4" fill="#1e1b4b" stroke="#4f46e5"/>
+  <text x="970" y="309" fill="#818cf8" font-size="9" text-anchor="middle">fast</text>
+  <rect x="995" y="295" width="40" height="20" rx="4" fill="#1e1b4b" stroke="#4f46e5"/>
+  <text x="1015" y="309" fill="#818cf8" font-size="9" text-anchor="middle">defi</text>
+
+  <!-- Feedback List -->
+  <rect x="610" y="360" width="440" height="90" rx="8" fill="#0f172a" stroke="#334155"/>
+  <text x="635" y="384" fill="#e2e8f0" font-size="12" font-weight="600">Recent Feedback</text>
+  <text x="635" y="406" fill="#4ade80" font-size="10">+85 "Excellent DeFi analysis" - 0x1a2b...3c4d</text>
+  <text x="635" y="424" fill="#4ade80" font-size="10">+72 "Fast response, reliable" - 0x5e6f...7g8h</text>
+  <text x="635" y="442" fill="#ef4444" font-size="10">-15 "Slow during peak hours" - 0x9i0j...1k2l</text>
+</svg>
+</div>
+</div>
+
+<!-- ==================== MONOREPO ==================== -->
+<div id="panel-monorepo" class="panel">
+<div class="diagram">
+<h2>Monorepo Package Dependency Graph</h2>
+<svg viewBox="0 0 900 500" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- apps/web -->
+  <rect x="300" y="30" width="300" height="70" rx="12" fill="#14532d" stroke="#22c55e" stroke-width="2"/>
+  <text x="450" y="58" fill="#86efac" font-size="16" font-weight="700" text-anchor="middle">apps/web</text>
+  <text x="450" y="80" fill="#22c55e" font-size="10" text-anchor="middle">Next.js 16 | wagmi | RainbowKit | Tailwind | Radix</text>
+
+  <!-- packages/shared -->
+  <rect x="80" y="180" width="280" height="70" rx="12" fill="#2d1f3d" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="220" y="210" fill="#c4b5fd" font-size="16" font-weight="700" text-anchor="middle">packages/shared</text>
+  <text x="220" y="232" fill="#8b5cf6" font-size="10" text-anchor="middle">Types | Zod Schemas | Constants | ABIs</text>
+
+  <!-- packages/sdk -->
+  <rect x="540" y="180" width="280" height="70" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
+  <text x="680" y="210" fill="#a5b4fc" font-size="16" font-weight="700" text-anchor="middle">packages/sdk</text>
+  <text x="680" y="232" fill="#6366f1" font-size="10" text-anchor="middle">AgentRegistryClient | npm package</text>
+
+  <!-- packages/contracts -->
+  <rect x="40" y="340" width="280" height="70" rx="12" fill="#422006" stroke="#f59e0b" stroke-width="2"/>
+  <text x="180" y="370" fill="#fcd34d" font-size="16" font-weight="700" text-anchor="middle">packages/contracts</text>
+  <text x="180" y="392" fill="#d97706" font-size="10" text-anchor="middle">Foundry | AgentRegistryWrapper.sol</text>
+
+  <!-- packages/subgraph -->
+  <rect x="360" y="340" width="280" height="70" rx="12" fill="#083344" stroke="#06b6d4" stroke-width="2"/>
+  <text x="500" y="370" fill="#67e8f9" font-size="16" font-weight="700" text-anchor="middle">packages/subgraph</text>
+  <text x="500" y="392" fill="#06b6d4" font-size="10" text-anchor="middle">The Graph | AssemblyScript</text>
+
+  <!-- viem -->
+  <rect x="680" y="340" width="180" height="50" rx="10" fill="#1a1a2e" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4"/>
+  <text x="770" y="370" fill="#94a3b8" font-size="13" font-weight="600" text-anchor="middle">viem (peer dep)</text>
+
+  <!-- Arrows -->
+  <line x1="380" y1="100" x2="280" y2="178" stroke="#8b5cf6" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="520" y1="100" x2="620" y2="178" stroke="#6366f1" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="590" y1="250" x2="360" y2="215" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="250" y1="340" x2="250" y2="252" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arr-o)"/>
+  <text x="263" y="300" fill="#f59e0b" font-size="10">ABIs</text>
+  <line x1="700" y1="250" x2="750" y2="338" stroke="#64748b" stroke-width="1" stroke-dasharray="4"/>
+
+  <!-- Rule -->
+  <rect x="40" y="440" width="820" height="35" rx="6" fill="#1a1a2e" stroke="#2d2d44"/>
+  <text x="450" y="462" fill="#6b7280" font-size="10" text-anchor="middle">
+    Rule: packages never import from apps/web | shared has zero runtime deps | sdk peer-depends on viem only | ABIs: contracts &#8594; shared &#8594; app + sdk
+  </text>
+</svg>
+</div>
+</div>
+
+<!-- ==================== DEPLOYMENT ==================== -->
+<div id="panel-deploy" class="panel">
+<div class="diagram">
+<h2>CI/CD &amp; Deployment Pipeline</h2>
+<svg viewBox="0 0 1100 440" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- Trigger -->
+  <rect x="30" y="40" width="160" height="50" rx="10" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="110" y="62" fill="#93c5fd" font-size="12" font-weight="700" text-anchor="middle">git push / PR</text>
+  <text x="110" y="78" fill="#60a5fa" font-size="9" text-anchor="middle">to main branch</text>
+  <line x1="190" y1="65" x2="230" y2="65" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- CI Box -->
+  <rect x="230" y="15" width="840" height="140" rx="12" fill="#0f172a" stroke="#1e293b"/>
+  <text x="255" y="43" fill="#94a3b8" font-size="11" font-weight="600" letter-spacing="1">GITHUB ACTIONS CI</text>
+
+  <rect x="255" y="55" width="185" height="80" rx="8" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="348" y="78" fill="#86efac" font-size="11" font-weight="600" text-anchor="middle">TypeCheck + Lint</text>
+  <text x="348" y="96" fill="#22c55e" font-size="9" text-anchor="middle">pnpm typecheck</text>
+  <text x="348" y="110" fill="#22c55e" font-size="9" text-anchor="middle">pnpm lint</text>
+  <text x="348" y="124" fill="#22c55e" font-size="9" text-anchor="middle">pnpm format:check</text>
+
+  <rect x="460" y="55" width="185" height="80" rx="8" fill="#422006" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="553" y="78" fill="#fcd34d" font-size="11" font-weight="600" text-anchor="middle">Foundry Tests</text>
+  <text x="553" y="96" fill="#d97706" font-size="9" text-anchor="middle">forge build</text>
+  <text x="553" y="110" fill="#d97706" font-size="9" text-anchor="middle">forge test -vvv</text>
+  <text x="553" y="124" fill="#d97706" font-size="9" text-anchor="middle">forge fmt --check</text>
+
+  <rect x="665" y="55" width="185" height="80" rx="8" fill="#083344" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="758" y="78" fill="#67e8f9" font-size="11" font-weight="600" text-anchor="middle">Subgraph Build</text>
+  <text x="758" y="96" fill="#06b6d4" font-size="9" text-anchor="middle">graph codegen</text>
+  <text x="758" y="110" fill="#06b6d4" font-size="9" text-anchor="middle">graph build</text>
+
+  <rect x="870" y="55" width="170" height="80" rx="8" fill="#1e1b4b" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="955" y="78" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Build All</text>
+  <text x="955" y="96" fill="#8b5cf6" font-size="9" text-anchor="middle">pnpm build</text>
+  <text x="955" y="110" fill="#8b5cf6" font-size="9" text-anchor="middle">(depends on typecheck)</text>
+
+  <!-- All pass arrow -->
+  <line x1="650" y1="155" x2="650" y2="190" stroke="#22c55e" stroke-width="2" marker-end="url(#arr-g)"/>
+  <text x="665" y="178" fill="#22c55e" font-size="10" font-weight="500">all pass</text>
+
+  <!-- Deploy targets -->
+  <rect x="30" y="200" width="1040" height="210" rx="12" fill="#0f172a" stroke="#1e293b"/>
+  <text x="55" y="228" fill="#94a3b8" font-size="11" font-weight="600" letter-spacing="1">DEPLOYMENT TARGETS</text>
+
+  <rect x="55" y="245" width="220" height="140" rx="10" fill="#14532d" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="165" y="272" fill="#86efac" font-size="13" font-weight="700" text-anchor="middle">Vercel</text>
+  <text x="165" y="295" fill="#22c55e" font-size="10" text-anchor="middle">Next.js app + API</text>
+  <text x="165" y="315" fill="#22c55e" font-size="9" text-anchor="middle">Preview on PR</text>
+  <text x="165" y="332" fill="#22c55e" font-size="9" text-anchor="middle">Production on merge</text>
+  <text x="165" y="349" fill="#22c55e" font-size="9" text-anchor="middle">Edge Runtime for SSE</text>
+  <text x="165" y="370" fill="#16a34a" font-size="9" text-anchor="middle" font-weight="600">Auto-deploy</text>
+
+  <rect x="300" y="245" width="220" height="140" rx="10" fill="#422006" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="410" y="272" fill="#fcd34d" font-size="13" font-weight="700" text-anchor="middle">Base Sepolia</text>
+  <text x="410" y="295" fill="#d97706" font-size="10" text-anchor="middle">Smart contracts</text>
+  <text x="410" y="315" fill="#d97706" font-size="9" text-anchor="middle">forge script Deploy.s.sol</text>
+  <text x="410" y="332" fill="#d97706" font-size="9" text-anchor="middle">Verify on BaseScan</text>
+  <text x="410" y="370" fill="#b45309" font-size="9" text-anchor="middle" font-weight="600">Manual trigger</text>
+
+  <rect x="545" y="245" width="220" height="140" rx="10" fill="#083344" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="655" y="272" fill="#67e8f9" font-size="13" font-weight="700" text-anchor="middle">The Graph</text>
+  <text x="655" y="295" fill="#06b6d4" font-size="10" text-anchor="middle">Subgraph indexer</text>
+  <text x="655" y="315" fill="#06b6d4" font-size="9" text-anchor="middle">Hosted service (testnet)</text>
+  <text x="655" y="332" fill="#06b6d4" font-size="9" text-anchor="middle">Decentralized (mainnet)</text>
+  <text x="655" y="370" fill="#0e7490" font-size="9" text-anchor="middle" font-weight="600">Manual trigger</text>
+
+  <rect x="790" y="245" width="220" height="140" rx="10" fill="#2d1f3d" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="900" y="272" fill="#c4b5fd" font-size="13" font-weight="700" text-anchor="middle">npm Registry</text>
+  <text x="900" y="295" fill="#8b5cf6" font-size="10" text-anchor="middle">@agent-registry/sdk</text>
+  <text x="900" y="315" fill="#8b5cf6" font-size="9" text-anchor="middle">tsup build (ESM + CJS)</text>
+  <text x="900" y="332" fill="#8b5cf6" font-size="9" text-anchor="middle">npm publish</text>
+  <text x="900" y="370" fill="#7c3aed" font-size="9" text-anchor="middle" font-weight="600">Tag trigger (v*.*.*)</text>
+</svg>
+</div>
+</div>
+
+</div>
+<script>
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  # =========================================================================
+  # Canonical ERC-8004 Identity Registry
+  # =========================================================================
+  - kind: ethereum
+    name: IdentityRegistry
+    network: base-sepolia
+    source:
+      address: "0x8004A818BFB912233c491871b3d84c89A494BD9e"
+      abi: IdentityRegistry
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+        - AgentMetadata
+        - ProtocolStats
+      abis:
+        - name: IdentityRegistry
+          file: ./abis/IdentityRegistry.json
+      eventHandlers:
+        - event: Registered(indexed uint256,string,indexed address)
+          handler: handleRegistered
+        - event: MetadataSet(indexed uint256,indexed string,string,bytes)
+          handler: handleMetadataSet
+        - event: URIUpdated(indexed uint256,string,indexed address)
+          handler: handleURIUpdated
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleTransfer
+      file: ./src/identity-registry.ts
+
+  # =========================================================================
+  # Canonical ERC-8004 Reputation Registry
+  # =========================================================================
+  - kind: ethereum
+    name: ReputationRegistry
+    network: base-sepolia
+    source:
+      address: "0x8004B663056A597Dffe9eCcC1965A193B7388713"
+      abi: ReputationRegistry
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Feedback
+        - FeedbackResponse
+        - ProtocolStats
+      abis:
+        - name: ReputationRegistry
+          file: ./abis/ReputationRegistry.json
+      eventHandlers:
+        - event: NewFeedback(indexed uint256,indexed address,uint64,int128,uint8,indexed string,string,string,string,string,bytes32)
+          handler: handleNewFeedback
+        - event: FeedbackRevoked(indexed uint256,indexed address,indexed uint64)
+          handler: handleFeedbackRevoked
+        - event: ResponseAppended(indexed uint256,indexed address,uint64,indexed address,string,bytes32)
+          handler: handleResponseAppended
+      file: ./src/reputation-registry.ts
+
+  # =========================================================================
+  # Custom AgentRegistryWrapper
+  # =========================================================================
+  - kind: ethereum
+    name: AgentRegistryWrapper
+    network: base-sepolia
+    source:
+      # TODO: Update after deployment
+      address: "0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C"
+      abi: AgentRegistryWrapper
+      startBlock: 20000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Agent
+        - ProtocolStats
+      abis:
+        - name: AgentRegistryWrapper
+          file: ./abis/AgentRegistryWrapper.json
+      eventHandlers:
+        - event: AgentRegisteredViaWrapper(indexed uint256,indexed address,string[])
+          handler: handleAgentRegisteredViaWrapper
+        - event: AgentTagsUpdated(indexed uint256,string[])
+          handler: handleAgentTagsUpdated
+        - event: AgentFeatured(indexed uint256,bool)
+          handler: handleAgentFeatured
+        - event: AgentActivityRecorded(indexed uint256,uint256)
+          handler: handleAgentActivityRecorded
+      file: ./src/wrapper.ts
+
+  # =========================================================================
+  # CompanyRegistry (agentic companies)
+  # =========================================================================
+  - kind: ethereum
+    name: CompanyRegistry
+    network: base-sepolia
+    source:
+      address: "0xD557AF896A116bdb9A671f2eB45baAa8e521f77f"
+      abi: CompanyRegistry
+      startBlock: 25000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Company
+        - CompanyMember
+        - CompanyTreasury
+        - Agent
+        - ProtocolStats
+      abis:
+        - name: CompanyRegistry
+          file: ./abis/CompanyRegistry.json
+      eventHandlers:
+        - event: CompanyCreated(indexed uint256,indexed address,string)
+          handler: handleCompanyCreated
+        - event: CompanyMetadataUpdated(indexed uint256,string)
+          handler: handleCompanyMetadataUpdated
+        - event: CompanyOwnershipTransferred(indexed uint256,indexed address,indexed address)
+          handler: handleCompanyOwnershipTransferred
+        - event: AgentAdded(indexed uint256,indexed uint256)
+          handler: handleAgentAdded
+        - event: AgentRemoved(indexed uint256,indexed uint256)
+          handler: handleAgentRemoved
+        - event: TreasuryAdded(indexed uint256,indexed address)
+          handler: handleTreasuryAdded
+        - event: TreasuryRemoved(indexed uint256,indexed address)
+          handler: handleTreasuryRemoved
+      file: ./src/company-registry.ts
