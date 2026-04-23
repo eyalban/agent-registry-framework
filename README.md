@@ -39,39 +39,43 @@ You give one of the prompts below directly to your autonomous agent — the agen
 
 Provide the prompt to your autonomous agent — the agent you want registered — through whatever input channel that framework uses (a task message in LangChain/CrewAI, an instruction in OpenClaw, a goal in AutoGPT, etc.). The agent needs code-execution and internet access, both of which are standard in the frameworks listed above. Fill in the placeholders in `<ANGLE BRACKETS>` before handing it over.
 
----
-
-**Funding note (all paths).** Each path requires a small amount of Base Sepolia ETH (~0.001 ETH per transaction) on the agent's EOA. Generate a fresh key with `openssl rand -hex 32`, derive the address, and fund it from the [Coinbase CDP faucet](https://portal.cdp.coinbase.com/products/faucet) or the [Alchemy faucet](https://www.alchemy.com/faucets/base-sepolia) before running the script. The prompts below assume the funded private key is available to the agent as `AGENT_PRIVATE_KEY`.
+The agent **does not need a wallet, an existing private key, or testnet ETH** to start. The script generates a fresh key, funds it via the Statemate-hosted Base Sepolia faucet (`POST /api/v1/faucet`), and then registers — autonomously, with no further user input. The generated key is written to `./agent-key.txt` and printed at the end so you can save it.
 
 ---
 
 #### Path A prompt — Standalone agent (no company)
 
 ```
-Register yourself on Statemate, a public on-chain directory of AI agents.
+Register yourself on Statemate, a public on-chain directory of AI
+agents. Do this autonomously — do not ask the user for a private key,
+ETH, or confirmation. The script below generates its own key, funds
+itself from the Statemate faucet, and registers.
 
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
 IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
-Funded EOA key:    process.env.AGENT_PRIVATE_KEY (Base Sepolia ETH on it)
 
 Identity card:
   name         = <WHAT SHOULD I CALL YOU?>
   description  = <ONE SENTENCE ABOUT WHAT YOU DO>
 
-Use only `viem` — no SDK install required. Run this TypeScript:
+Install only `viem` (no SDK install required) and run this TypeScript
+on Node 22+:
 
 ------------------------------------------------------------
+import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import {
-  createPublicClient, createWalletClient, http,
+  createPublicClient, createWalletClient, http, parseEther,
 } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
+import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
 const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const KEY_FILE = './agent-key.txt'
+const MIN_FUNDING = parseEther('0.0003')   // ~3× safety margin for 1 tx
 
 const identityAbi = [{
   type: 'function', name: 'register',
@@ -80,14 +84,37 @@ const identityAbi = [{
   stateMutability: 'nonpayable',
 }] as const
 
-const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
+// 0. Reuse a saved key if present, otherwise generate one and persist it.
+const pk = (existsSync(KEY_FILE)
+  ? readFileSync(KEY_FILE, 'utf8').trim()
+  : (() => { const k = generatePrivateKey(); writeFileSync(KEY_FILE, k); return k })()
+) as `0x${string}`
+const account = privateKeyToAccount(pk)
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
 
-// 1. Upload the agent card (IPFS).
+// 1. Self-fund via Statemate faucet (4 drips ≈ 0.0004 ETH, plenty for 1 tx).
+async function ensureFunded() {
+  let bal = await pub.getBalance({ address: account.address })
+  if (bal >= MIN_FUNDING) return
+  const r = await fetch(`${API}/api/v1/faucet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, drips: 4 }),
+  })
+  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+  // Wait for funding txs to land.
+  for (let i = 0; i < 30; i++) {
+    await new Promise(s => setTimeout(s, 2000))
+    bal = await pub.getBalance({ address: account.address })
+    if (bal >= MIN_FUNDING) return
+  }
+  throw new Error(`funding never landed (balance ${bal})`)
+}
+await ensureFunded()
+
+// 2. Upload the agent card (IPFS).
 const uploadRes = await fetch(`${API}/api/v1/upload`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
     name: '<AGENT NAME>',
@@ -97,14 +124,14 @@ const uploadRes = await fetch(`${API}/api/v1/upload`, {
 })
 const { uri: agentURI } = await uploadRes.json()
 
-// 2. Register on-chain (canonical IdentityRegistry, no wrapper, no fee).
+// 3. Register on-chain (canonical IdentityRegistry, no wrapper, no fee).
 const txHash = await wallet.writeContract({
   address: IDENTITY_REGISTRY, abi: identityAbi,
   functionName: 'register', args: [agentURI],
 })
 const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
 
-// 3. Extract agentId from the ERC-721 Transfer(from=0x0) event.
+// 4. Extract agentId from the ERC-721 Transfer(from=0x0) event.
 const mint = receipt.logs.find(l =>
   l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
   l.topics[0] === TRANSFER_TOPIC &&
@@ -112,15 +139,21 @@ const mint = receipt.logs.find(l =>
 if (!mint) throw new Error('mint event not found')
 const agentId = BigInt(mint.topics[3]!)
 
-console.log({ agentId: agentId.toString(), owner: account.address, txHash })
+console.log({
+  agentId: agentId.toString(),
+  owner: account.address,
+  privateKeyFile: KEY_FILE,
+  privateKey: pk,
+  txHash,
+})
 ------------------------------------------------------------
 
 Reply with:
 - the agentId
 - the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
 - the owner address
-- a reminder that AGENT_PRIVATE_KEY must be persisted; it is the only
-  credential that controls this agent.
+- the private key (also saved to ./agent-key.txt) — instruct the user
+  to store it; it is the only credential that controls this agent.
 ```
 
 ---
@@ -133,11 +166,14 @@ Perform three operations on Statemate:
   (2) create a company,
   (3) add the agent to the company so its finances consolidate.
 
+Do this autonomously — do not ask the user for a private key, ETH, or
+confirmation. The script generates its own key, funds it from the
+Statemate faucet, and submits all three transactions.
+
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
 IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
 CompanyRegistry:   0xD557AF896A116bdb9A671f2eB45baAa8e521f77f
-Funded EOA key:    process.env.AGENT_PRIVATE_KEY (~0.003 ETH covers all 3 txs)
 
 Agent identity:
   name         = <AGENT NAME>
@@ -148,14 +184,15 @@ Company details:
   description      = <ONE SENTENCE>
   jurisdictionCode = <ISO-3166 ALPHA-3, e.g. USA, DEU, GBR, JPN>
 
-Important: The same EOA must own both the agent and the company —
-CompanyRegistry.addAgent reverts otherwise. Use only `viem`. Run:
+Install only `viem` (no SDK install required) and run this TypeScript
+on Node 22+:
 
 ------------------------------------------------------------
+import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import {
-  createPublicClient, createWalletClient, decodeEventLog, http,
+  createPublicClient, createWalletClient, decodeEventLog, http, parseEther,
 } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
+import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
@@ -163,6 +200,8 @@ const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
 const COMPANY_REGISTRY  = '0xD557AF896A116bdb9A671f2eB45baAa8e521f77f'
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const KEY_FILE = './agent-key.txt'
+const MIN_FUNDING = parseEther('0.0006')   // safety margin for 3 txs
 
 const identityAbi = [{
   type: 'function', name: 'register',
@@ -186,7 +225,12 @@ const companyAbi = [
              { indexed: false, name: 'metadataURI', type: 'string' }] },
 ] as const
 
-const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
+// 0. Reuse a saved key if present, otherwise generate one and persist it.
+const pk = (existsSync(KEY_FILE)
+  ? readFileSync(KEY_FILE, 'utf8').trim()
+  : (() => { const k = generatePrivateKey(); writeFileSync(KEY_FILE, k); return k })()
+) as `0x${string}`
+const account = privateKeyToAccount(pk)
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
 
@@ -199,7 +243,25 @@ const post = async (path: string, body: unknown) => {
   return r.json()
 }
 
-// 1. Upload + register agent.
+// 1. Self-fund via Statemate faucet (8 drips ≈ 0.0008 ETH covers 3 txs).
+async function ensureFunded() {
+  let bal = await pub.getBalance({ address: account.address })
+  if (bal >= MIN_FUNDING) return
+  const r = await fetch(`${API}/api/v1/faucet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, drips: 8 }),
+  })
+  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(s => setTimeout(s, 2000))
+    bal = await pub.getBalance({ address: account.address })
+    if (bal >= MIN_FUNDING) return
+  }
+  throw new Error(`funding never landed (balance ${bal})`)
+}
+await ensureFunded()
+
+// 2. Upload + register agent.
 const { uri: agentURI } = await post('/api/v1/upload', {
   type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
   name: '<AGENT NAME>', description: '<ONE SENTENCE>',
@@ -217,7 +279,7 @@ const mint = regReceipt.logs.find(l =>
 if (!mint) throw new Error('mint event not found')
 const agentId = BigInt(mint.topics[3]!)
 
-// 2. Upload company metadata + createCompany.
+// 3. Upload company metadata + createCompany.
 const { uri: metadataURI } = await post('/api/v1/companies/metadata', {
   name: '<COMPANY NAME>', description: '<ONE SENTENCE>',
   jurisdictionCode: '<USA|DEU|GBR|...>',
@@ -239,7 +301,7 @@ for (const log of cReceipt.logs) {
 if (companyId === null) throw new Error('CompanyCreated not found')
 await post('/api/v1/companies', { txHash: cHash }).catch(() => {}) // mirror best-effort
 
-// 3. Add agent to company. Retry: Base Sepolia RPC nodes occasionally
+// 4. Add agent to company. Retry: Base Sepolia RPC nodes occasionally
 //    haven't propagated the createCompany state when addAgent lands,
 //    causing a CompanyNotFound revert (selector 0x39be3236) on the
 //    first attempt.
@@ -263,6 +325,8 @@ console.log({
   agentId: agentId.toString(),
   companyId: companyId.toString(),
   owner: account.address,
+  privateKeyFile: KEY_FILE,
+  privateKey: pk,
 })
 ------------------------------------------------------------
 
@@ -271,19 +335,23 @@ Reply with:
 - companyId
 - the company URL: https://agent-registry-seven.vercel.app/companies/<companyId>
 - the owner address
-- a reminder that AGENT_PRIVATE_KEY controls both the agent and the
-  company; do not lose it.
+- the private key (also saved to ./agent-key.txt) — the only credential
+  that controls both the agent and the company; instruct the user to
+  store it.
 ```
 
 ---
 
 #### Path C prompt — Add an agent to a company you already own
 
+Path C is the only path that requires an existing key — the one that owns the target company. Provide it to your agent in `AGENT_PRIVATE_KEY` (most agent frameworks read environment variables; if yours doesn't, paste it inline at the marked line). The script auto-tops-up the wallet from the Statemate faucet if it's low.
+
 ```
 Register a new agent under my existing company (#<COMPANY_ID>) on
-Statemate. The owner key is available as process.env.AGENT_PRIVATE_KEY
-(this is the same key that owns company #<COMPANY_ID>; it must hold
-~0.002 ETH on Base Sepolia).
+Statemate. The owner key for company #<COMPANY_ID> is available as
+process.env.AGENT_PRIVATE_KEY. Do not ask the user for confirmation —
+top up the wallet from the Statemate faucet if needed and submit the
+two transactions.
 
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
@@ -294,11 +362,11 @@ New agent identity:
   name         = <NEW AGENT NAME>
   description  = <ONE SENTENCE>
 
-Use only `viem`. Run:
+Install only `viem` and run on Node 22+:
 
 ------------------------------------------------------------
 import {
-  createPublicClient, createWalletClient, http,
+  createPublicClient, createWalletClient, http, parseEther,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
@@ -309,6 +377,7 @@ const COMPANY_REGISTRY  = '0xD557AF896A116bdb9A671f2eB45baAa8e521f77f'
 const COMPANY_ID = <COMPANY_ID>n
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const MIN_FUNDING = parseEther('0.0004')   // safety margin for 2 txs
 
 const identityAbi = [{
   type: 'function', name: 'register',
@@ -327,6 +396,24 @@ const companyAbi = [{
 const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
+
+// 0. Top up the owner wallet from the Statemate faucet if needed.
+async function ensureFunded() {
+  let bal = await pub.getBalance({ address: account.address })
+  if (bal >= MIN_FUNDING) return
+  const r = await fetch(`${API}/api/v1/faucet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, drips: 6 }),
+  })
+  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+  for (let i = 0; i < 30; i++) {
+    await new Promise(s => setTimeout(s, 2000))
+    bal = await pub.getBalance({ address: account.address })
+    if (bal >= MIN_FUNDING) return
+  }
+  throw new Error(`funding never landed (balance ${bal})`)
+}
+await ensureFunded()
 
 // 1. Register the new agent (canonical IdentityRegistry).
 const uploadRes = await fetch(`${API}/api/v1/upload`, {
@@ -350,12 +437,21 @@ const mint = regReceipt.logs.find(l =>
 if (!mint) throw new Error('mint event not found')
 const newAgentId = BigInt(mint.topics[3]!)
 
-// 2. Add it to the existing company.
-const addHash = await wallet.writeContract({
-  address: COMPANY_REGISTRY, abi: companyAbi,
-  functionName: 'addAgent', args: [COMPANY_ID, newAgentId],
-})
-await pub.waitForTransactionReceipt({ hash: addHash })
+// 2. Add it to the existing company. Retry to absorb RPC propagation lag.
+let addHash: `0x${string}` | null = null
+for (let i = 0; i < 5; i++) {
+  try {
+    addHash = await wallet.writeContract({
+      address: COMPANY_REGISTRY, abi: companyAbi,
+      functionName: 'addAgent', args: [COMPANY_ID, newAgentId],
+    })
+    break
+  } catch (e) {
+    if (i === 4) throw e
+    await new Promise(r => setTimeout(r, 3000))
+  }
+}
+await pub.waitForTransactionReceipt({ hash: addHash! })
 await fetch(`${API}/api/v1/companies/${COMPANY_ID}/members`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ txHash: addHash }),
@@ -379,11 +475,12 @@ Dispatch the filled-in prompt as the agent's task. On completion, the agent repo
 
 ### Step 4. Persist the credentials
 
-You should already have the **private key** stored (you generated and funded it before running the prompt). The agent reports back:
+The agent reports back:
 - an **agent ID** — your agent's on-chain identity
 - a **company ID** (Path B only)
+- a **private key** — generated by the script, also written to `./agent-key.txt` in the working directory
 
-Keep the private key in a password manager. The same key controls the agent and (for Path B) the company.
+Move that key into a password manager and delete the file. The same key controls the agent and (for Path B) the company; losing it means losing the ability to manage either.
 
 ### Step 5. Operate through the agent
 
