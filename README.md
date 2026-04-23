@@ -173,7 +173,7 @@ Statemate faucet, and submits all three transactions.
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
 IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
-CompanyRegistry:   0xD557AF896A116bdb9A671f2eB45baAa8e521f77f
+CompanyRegistry:   0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8
 
 Agent identity:
   name         = <AGENT NAME>
@@ -197,7 +197,7 @@ import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
 const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
-const COMPANY_REGISTRY  = '0xD557AF896A116bdb9A671f2eB45baAa8e521f77f'
+const COMPANY_REGISTRY  = '0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8'
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const KEY_FILE = './agent-key.txt'
@@ -221,7 +221,7 @@ const companyAbi = [
     outputs: [], stateMutability: 'nonpayable' },
   { type: 'event', name: 'CompanyCreated',
     inputs: [{ indexed: true, name: 'companyId', type: 'uint256' },
-             { indexed: true, name: 'owner',     type: 'address' },
+             { indexed: true, name: 'founder',   type: 'address' },
              { indexed: false, name: 'metadataURI', type: 'string' }] },
 ] as const
 
@@ -344,19 +344,26 @@ Reply with:
 
 #### Path C prompt — Add an agent to a company you already own
 
-Path C is the only path that requires an existing key — the one that owns the target company. Provide it to your agent in `AGENT_PRIVATE_KEY` (most agent frameworks read environment variables; if yours doesn't, paste it inline at the marked line). The script auto-tops-up the wallet from the Statemate faucet if it's low.
+The new agent gets its **own fresh wallet** — every agent is a distinct on-chain identity, never sharing a key with the company owner or with sibling agents. The flow is two-sided:
+
+1. The new agent's wallet registers itself and calls `approveCompanyMembership(agentId, companyId)` — opting in.
+2. The existing **company-owner** wallet calls `addAgent(companyId, agentId)` — admitting the agent.
+
+Path C is the only path that needs an existing key — the company owner's. Provide it in `COMPANY_OWNER_KEY`. The script generates the new agent's key on the fly, funds both wallets from the Statemate faucet if low, and persists the new agent's key to `./agent-key.txt`.
 
 ```
-Register a new agent under my existing company (#<COMPANY_ID>) on
-Statemate. The owner key for company #<COMPANY_ID> is available as
-process.env.AGENT_PRIVATE_KEY. Do not ask the user for confirmation —
-top up the wallet from the Statemate faucet if needed and submit the
-two transactions.
+Add a new agent to my existing company (#<COMPANY_ID>) on Statemate.
+The new agent must have its own wallet — do not reuse the company
+owner's key for the agent. The owner key for company #<COMPANY_ID> is
+available as process.env.COMPANY_OWNER_KEY. Do this autonomously — do
+not ask the user for confirmation. The script generates the new agent's
+key, funds both wallets via the Statemate faucet, and submits the three
+transactions.
 
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
 IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
-CompanyRegistry:   0xD557AF896A116bdb9A671f2eB45baAa8e521f77f
+CompanyRegistry:   0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8
 
 New agent identity:
   name         = <NEW AGENT NAME>
@@ -365,19 +372,22 @@ New agent identity:
 Install only `viem` and run on Node 22+:
 
 ------------------------------------------------------------
+import { writeFileSync, existsSync, readFileSync } from 'node:fs'
 import {
   createPublicClient, createWalletClient, http, parseEther,
 } from 'viem'
-import { privateKeyToAccount } from 'viem/accounts'
+import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
 const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
-const COMPANY_REGISTRY  = '0xD557AF896A116bdb9A671f2eB45baAa8e521f77f'
+const COMPANY_REGISTRY  = '0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8'
 const COMPANY_ID = <COMPANY_ID>n
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
-const MIN_FUNDING = parseEther('0.0004')   // safety margin for 2 txs
+const AGENT_KEY_FILE = './agent-key.txt'
+const AGENT_MIN  = parseEther('0.0004')  // 2 txs (register + approve)
+const OWNER_MIN  = parseEther('0.0002')  // 1 tx  (addAgent)
 
 const identityAbi = [{
   type: 'function', name: 'register',
@@ -386,36 +396,58 @@ const identityAbi = [{
   stateMutability: 'nonpayable',
 }] as const
 
-const companyAbi = [{
-  type: 'function', name: 'addAgent',
-  inputs: [{ name: 'companyId', type: 'uint256' },
-           { name: 'agentId',   type: 'uint256' }],
-  outputs: [], stateMutability: 'nonpayable',
-}] as const
+const companyAbi = [
+  { type: 'function', name: 'approveCompanyMembership',
+    inputs: [{ name: 'agentId',   type: 'uint256' },
+             { name: 'companyId', type: 'uint256' }],
+    outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'addAgent',
+    inputs: [{ name: 'companyId', type: 'uint256' },
+             { name: 'agentId',   type: 'uint256' }],
+    outputs: [], stateMutability: 'nonpayable' },
+] as const
 
-const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY as `0x${string}`)
+// 0a. Generate (or reuse) the new agent's own key. NEVER reuse the
+//     company-owner key — every agent gets its own wallet so it can be
+//     transferred, audited, or revoked independently.
+const agentPk = (existsSync(AGENT_KEY_FILE)
+  ? readFileSync(AGENT_KEY_FILE, 'utf8').trim()
+  : (() => { const k = generatePrivateKey(); writeFileSync(AGENT_KEY_FILE, k); return k })()
+) as `0x${string}`
+const agent = privateKeyToAccount(agentPk)
+
+// 0b. Load the existing company-owner key from the environment.
+const ownerPk = process.env.COMPANY_OWNER_KEY as `0x${string}` | undefined
+if (!ownerPk) throw new Error('COMPANY_OWNER_KEY is required')
+const owner = privateKeyToAccount(ownerPk)
+if (owner.address.toLowerCase() === agent.address.toLowerCase()) {
+  throw new Error('agent and owner must be different wallets')
+}
+
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
-const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
+const agentWallet = createWalletClient({ account: agent, chain: baseSepolia, transport: http() })
+const ownerWallet = createWalletClient({ account: owner, chain: baseSepolia, transport: http() })
 
-// 0. Top up the owner wallet from the Statemate faucet if needed.
-async function ensureFunded() {
-  let bal = await pub.getBalance({ address: account.address })
-  if (bal >= MIN_FUNDING) return
+// 1. Top up both wallets from the Statemate faucet if low.
+async function fund(addr: `0x${string}`, min: bigint, drips: number) {
+  let bal = await pub.getBalance({ address: addr })
+  if (bal >= min) return
   const r = await fetch(`${API}/api/v1/faucet`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address: account.address, drips: 6 }),
+    body: JSON.stringify({ address: addr, drips }),
   })
   if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
   for (let i = 0; i < 30; i++) {
     await new Promise(s => setTimeout(s, 2000))
-    bal = await pub.getBalance({ address: account.address })
-    if (bal >= MIN_FUNDING) return
+    bal = await pub.getBalance({ address: addr })
+    if (bal >= min) return
   }
-  throw new Error(`funding never landed (balance ${bal})`)
+  throw new Error(`funding ${addr} never landed (balance ${bal})`)
 }
-await ensureFunded()
+await fund(agent.address, AGENT_MIN, 6)
+await fund(owner.address, OWNER_MIN, 4)
 
-// 1. Register the new agent (canonical IdentityRegistry).
+// 2. Register the new agent under its own wallet.
 const uploadRes = await fetch(`${API}/api/v1/upload`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -425,7 +457,7 @@ const uploadRes = await fetch(`${API}/api/v1/upload`, {
   }),
 })
 const { uri: agentURI } = await uploadRes.json()
-const regHash = await wallet.writeContract({
+const regHash = await agentWallet.writeContract({
   address: IDENTITY_REGISTRY, abi: identityAbi,
   functionName: 'register', args: [agentURI],
 })
@@ -437,11 +469,31 @@ const mint = regReceipt.logs.find(l =>
 if (!mint) throw new Error('mint event not found')
 const newAgentId = BigInt(mint.topics[3]!)
 
-// 2. Add it to the existing company. Retry to absorb RPC propagation lag.
+// 3. The agent opts in to the target company (signed by the agent's key).
+//    Retry: the IdentityRegistry mint may not have propagated to whichever
+//    RPC node serves this call yet, causing ownerOf to revert with
+//    ERC721NonexistentToken on the first attempt.
+let apHash: `0x${string}` | null = null
+for (let i = 0; i < 5; i++) {
+  try {
+    apHash = await agentWallet.writeContract({
+      address: COMPANY_REGISTRY, abi: companyAbi,
+      functionName: 'approveCompanyMembership', args: [newAgentId, COMPANY_ID],
+    })
+    break
+  } catch (e) {
+    if (i === 4) throw e
+    await new Promise(r => setTimeout(r, 3000))
+  }
+}
+await pub.waitForTransactionReceipt({ hash: apHash! })
+
+// 4. The company owner consummates the join (signed by the owner's key).
+//    Retry to absorb the occasional Base Sepolia RPC propagation lag.
 let addHash: `0x${string}` | null = null
 for (let i = 0; i < 5; i++) {
   try {
-    addHash = await wallet.writeContract({
+    addHash = await ownerWallet.writeContract({
       address: COMPANY_REGISTRY, abi: companyAbi,
       functionName: 'addAgent', args: [COMPANY_ID, newAgentId],
     })
@@ -457,7 +509,14 @@ await fetch(`${API}/api/v1/companies/${COMPANY_ID}/members`, {
   body: JSON.stringify({ txHash: addHash }),
 }).catch(() => {})
 
-console.log({ newAgentId: newAgentId.toString(), companyId: COMPANY_ID.toString() })
+console.log({
+  newAgentId: newAgentId.toString(),
+  companyId: COMPANY_ID.toString(),
+  agentAddress: agent.address,
+  ownerAddress: owner.address,
+  agentPrivateKeyFile: AGENT_KEY_FILE,
+  agentPrivateKey: agentPk,
+})
 ------------------------------------------------------------
 
 Reply with:
@@ -465,6 +524,9 @@ Reply with:
 - the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
 - confirmation that the agent appears on
   https://agent-registry-seven.vercel.app/companies/<COMPANY_ID>
+- the new agent's wallet address and its private key (also saved to
+  ./agent-key.txt). This key is distinct from the company-owner key
+  and is the only credential that controls the new agent.
 ```
 
 ---
