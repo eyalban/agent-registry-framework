@@ -92,6 +92,7 @@ const uploadRes = await fetch(`${API}/api/v1/upload`, {
     type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
     name: '<AGENT NAME>',
     description: '<ONE SENTENCE>',
+    image: 'https://placehold.co/400x400/0f1520/00e5ff?text=Agent',
   }),
 })
 const { uri: agentURI } = await uploadRes.json()
@@ -202,6 +203,7 @@ const post = async (path: string, body: unknown) => {
 const { uri: agentURI } = await post('/api/v1/upload', {
   type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
   name: '<AGENT NAME>', description: '<ONE SENTENCE>',
+  image: 'https://placehold.co/400x400/0f1520/00e5ff?text=Agent',
 })
 const regHash = await wallet.writeContract({
   address: IDENTITY_REGISTRY, abi: identityAbi,
@@ -237,12 +239,24 @@ for (const log of cReceipt.logs) {
 if (companyId === null) throw new Error('CompanyCreated not found')
 await post('/api/v1/companies', { txHash: cHash }).catch(() => {}) // mirror best-effort
 
-// 3. Add agent to company.
-const addHash = await wallet.writeContract({
-  address: COMPANY_REGISTRY, abi: companyAbi,
-  functionName: 'addAgent', args: [companyId, agentId],
-})
-await pub.waitForTransactionReceipt({ hash: addHash })
+// 3. Add agent to company. Retry: Base Sepolia RPC nodes occasionally
+//    haven't propagated the createCompany state when addAgent lands,
+//    causing a CompanyNotFound revert (selector 0x39be3236) on the
+//    first attempt.
+let addHash: `0x${string}` | null = null
+for (let i = 0; i < 5; i++) {
+  try {
+    addHash = await wallet.writeContract({
+      address: COMPANY_REGISTRY, abi: companyAbi,
+      functionName: 'addAgent', args: [companyId, agentId],
+    })
+    break
+  } catch (e) {
+    if (i === 4) throw e
+    await new Promise(r => setTimeout(r, 3000))
+  }
+}
+await pub.waitForTransactionReceipt({ hash: addHash! })
 await post(`/api/v1/companies/${companyId}/members`, { txHash: addHash }).catch(() => {})
 
 console.log({
@@ -320,6 +334,7 @@ const uploadRes = await fetch(`${API}/api/v1/upload`, {
   body: JSON.stringify({
     type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
     name: '<NEW AGENT NAME>', description: '<ONE SENTENCE>',
+    image: 'https://placehold.co/400x400/0f1520/00e5ff?text=Agent',
   }),
 })
 const { uri: agentURI } = await uploadRes.json()
