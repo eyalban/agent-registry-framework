@@ -5,7 +5,7 @@ import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
 
 /**
  * @title CompanyRegistry
- * @author Agent Registry Team
+ * @author Statemate Team
  * @notice On-chain primitive for agentic companies: a group of ERC-8004
  *         agents and one or more treasury addresses, owned by a single EOA
  *         (or contract) that can transfer ownership. Intended as the

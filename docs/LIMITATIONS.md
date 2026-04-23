@@ -42,7 +42,7 @@ The tax resolver produces one rate per company per period and multiplies it by o
 
 The bundled `tax_rates` seed covers major OECD members. Companies in jurisdictions not covered (many African, Middle-Eastern, Central Asian, and small-island nations) must provide an effective-rate override or the app refuses to compute tax.
 
-**Status.** Add more jurisdictions in the reference-implementation seed by hand; PRs welcome in the reference repo. A live OECD fetcher (rather than a committed snapshot) is a nice-to-have.
+**Status.** Add more jurisdictions to `apps/web/src/lib/tax-rate-seed.ts` by hand; PRs welcome. A live OECD fetcher (rather than a committed snapshot) is a nice-to-have.
 
 ### No off-chain vendor integrations
 
@@ -86,7 +86,7 @@ The SDK reads directly from the contracts. For applications doing many historica
 
 ### Postgres mirror is a reference pattern, not a package
 
-The reference web app uses a Neon Postgres database as a queryable mirror of the subgraph + direct reads. The mirror code lives in the reference-implementation repository, not this framework repo, and is not published as an npm package. Consumers who want the same "write after event verification" guarantee must adopt the pattern in their own server code.
+The reference web app uses a Neon Postgres database as a queryable mirror of the subgraph + direct reads. The mirror code is in `apps/web/src/lib/` — but it's not published as an npm package. Consumers who want the same "write after event verification" guarantee must copy the pattern.
 
 **Status.** Extracting `@agent-registry/accounting` as a standalone server-side package is a v1.1 item.
 

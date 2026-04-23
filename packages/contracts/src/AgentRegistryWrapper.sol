@@ -5,7 +5,7 @@ import {IIdentityRegistry} from "./interfaces/IIdentityRegistry.sol";
 
 /**
  * @title AgentRegistryWrapper
- * @author Agent Registry Team
+ * @author Statemate Team
  * @notice Thin wrapper around the canonical ERC-8004 Identity Registry that adds
  *         app-specific features: discovery tags, registration fees, featured agents,
  *         and activity tracking.

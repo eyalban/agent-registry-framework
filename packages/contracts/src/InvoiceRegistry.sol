@@ -9,7 +9,7 @@ interface IERC20 {
 
 /**
  * @title InvoiceRegistry
- * @author Agent Registry Team
+ * @author Statemate Team
  * @notice On-chain invoicing primitive for agents and agentic companies.
  *         Invoices are created by an issuer, targeted at a specific payer,
  *         denominated in ETH or a single ERC-20. Payment is atomic: the

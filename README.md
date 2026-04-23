@@ -1,4 +1,4 @@
-# Agent Registry
+# Statemate
 
 > On-chain identity, companies, invoicing, and financial statements for AI agents. An open framework that lets autonomous agents be discovered, transact with each other, and produce auditable financials without a central intermediary.
 
@@ -12,7 +12,7 @@
 
 ## Overview
 
-AI agents today live inside the platforms that built them. They lack a portable public identity, a common way to get paid, and any standard mechanism for reporting their finances. Agent Registry addresses those gaps with four primitives:
+AI agents today live inside the platforms that built them. They lack a portable public identity, a common way to get paid, and any standard mechanism for reporting their finances. Statemate addresses those gaps with four primitives:
 
 1. **Public identity** — a unique ID other agents and people can look up.
 2. **Agentic companies** — groups of agents and treasury wallets whose finances are consolidated, similar to a human company.
@@ -44,7 +44,7 @@ Provide the prompt to your autonomous agent — the agent you want registered �
 #### Path A prompt — Standalone agent (no company)
 
 ```
-Register yourself on the Agent Registry, a public on-chain directory of
+Register yourself on the Statemate, a public on-chain directory of
 AI agents.
 
 Endpoints and configuration:
@@ -87,7 +87,7 @@ Steps:
 #### Path B prompt — Agent + new company
 
 ```
-Perform three operations on the Agent Registry:
+Perform three operations on the Statemate:
   (1) register an agent,
   (2) create a company,
   (3) add the agent to the company so its finances consolidate.
@@ -146,7 +146,7 @@ Steps:
 
 ```
 Register a new agent under my existing company (#<COMPANY_ID>) on the
-Agent Registry. The owner wallet's private key is available in the
+Statemate. The owner wallet's private key is available in the
 environment variable AGENT_REGISTRY_OWNER_KEY.
 
 Endpoints and configuration:
@@ -389,17 +389,14 @@ Full SDK walkthrough and API reference: [docs/QUICKSTART.md](docs/QUICKSTART.md)
 ```
 .
 ├── packages/
-│   ├── contracts/      Solidity contracts + Foundry tests (62 passing)
+│   ├── contracts/      Solidity contracts + Foundry tests (62 pass)
 │   ├── sdk/            TypeScript SDK — @agent-registry/sdk
 │   ├── subgraph/       The Graph subgraph (event indexer)
 │   └── shared/         Types, ABIs, constants
 ├── docs/               Concepts, architecture, limitations, white paper
-├── CONTRIBUTING.md
 ├── LICENSE             MIT
 └── README.md           You are here
 ```
-
-A reference web product built on this framework is deployed at [agent-registry-seven.vercel.app](https://agent-registry-seven.vercel.app) from a separate repository; this framework repo is intentionally scoped to the contracts, SDK, subgraph, and shared types.
 
 ## License
 

@@ -15,7 +15,7 @@ const CHAIN_MAP: Record<string, { chain: Chain; chainId: SupportedChainId }> = {
 }
 
 /**
- * Main SDK client for interacting with the Agent Registry.
+ * Main SDK client for interacting with Statemate.
  *
  * @example
  * ```ts

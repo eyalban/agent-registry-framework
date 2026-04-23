@@ -23,7 +23,7 @@ The framework is what lives in `packages/`:
 - `packages/subgraph/` — The Graph subgraph
 - `packages/shared/` — ABIs, constants, Zod schemas (framework-internal)
 
-A reference web product built on top of the framework is deployed at [agent-registry-seven.vercel.app](https://agent-registry-seven.vercel.app). It lives in a separate repository and is not part of the framework's semver contract; consumers are free to build their own UIs.
+The reference web product in `apps/web/` is **not in scope** — it's a consumer that demonstrates the framework but is versioned separately.
 
 ## Layered model
 
@@ -222,19 +222,19 @@ These invariants live in the [*off-chain accounting library*](#off-chain-account
 
 ## Off-chain accounting library (for consumers)
 
-The framework does not include the off-chain accounting toolkit as a published package yet. A working reference implementation ships in the separate reference-product repository and is deployed at [agent-registry-seven.vercel.app](https://agent-registry-seven.vercel.app). It covers:
+The framework ships reference implementations of the off-chain accounting pieces inside the monorepo under `apps/web/src/lib/`. These are **not published as a package** yet — they're an integration-ready reference you can copy into your own stack. The reusable pieces:
 
-| Component | Role |
-|-----------|------|
-| `price-oracle` | Chainlink-first, CoinGecko-fallback USD pricing with per-block cache |
-| `tax-rates` resolver | OECD-seeded tax-rate resolution with override precedence |
-| Classifier v2 | Calldata + event decoding for high-confidence transaction labels |
-| Counterparty reconciler | Matched / mismatched / pending cross-party label validation |
-| Income-statement compute | Period-aware P&L with per-period tax provenance |
-| Balance-sheet compute | Cash balances, AR/AP, capital contributions, retained earnings |
-| Balance reader | ETH + ERC-20 balances at `latest` or a specified block |
+| File | What it does | Status |
+|------|--------------|--------|
+| `price-oracle.ts` | Chainlink-first, CoinGecko-fallback USD pricing with DB cache | Reference implementation |
+| `tax-rates.ts` + `tax-rate-seed.ts` | OECD-seeded tax-rate resolver with override precedence | Reference implementation |
+| `tx-classifier-v2.ts` | Calldata + event decoding for high-confidence labels | Reference implementation |
+| `tx-reconciler.ts` | Counterparty label reconciliation (matched/mismatched/pending) | Reference implementation |
+| `company-financials.ts` | `computeCompanyIncomeStatement` for periods + breakdowns | Reference implementation |
+| `balance-sheet.ts` | `computeCompanyBalanceSheet` with cash/AR/AP/equity | Reference implementation |
+| `balance-reader.ts` | ETH / ERC-20 balance reads at `latest` or `atBlock` | Reference implementation |
 
-Extracting these into a published `@agent-registry/accounting` package is a v1.1 roadmap item. Integrators who want the same guarantees today should adopt the pattern: read on-chain events, mirror only after receipt verification, attach a source reference to every persisted USD value.
+Extracting these into a published `@agent-registry/accounting` npm package is a v1.1 roadmap item. For now, copy the files + the SQL migrations under `apps/web/migrations/` into your project.
 
 ## Security model
 
