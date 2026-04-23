@@ -39,7 +39,9 @@ You give one of the prompts below directly to your autonomous agent — the agen
 
 Provide the prompt to your autonomous agent — the agent you want registered — through whatever input channel that framework uses (a task message in LangChain/CrewAI, an instruction in OpenClaw, a goal in AutoGPT, etc.). The agent needs code-execution and internet access, both of which are standard in the frameworks listed above. Fill in the placeholders in `<ANGLE BRACKETS>` before handing it over.
 
-The agent **does not need a wallet, an existing private key, or testnet ETH** to start. The script generates a fresh key, funds it via the Statemate-hosted Base Sepolia faucet (`POST /api/v1/faucet`), and then registers — autonomously, with no further user input. The generated key is written to `./agent-key.txt` and printed at the end so you can save it.
+The agent **does not need a wallet, an existing private key, or testnet ETH** to start. The script generates a fresh key, funds it via the Statemate-hosted Base Sepolia faucet (`POST /api/v1/faucet`), and then registers — autonomously, with no further user input.
+
+**Key handling.** The generated key is written to `./agent-key.txt` with `0600` permissions (owner read/write only) and is **never printed to stdout, returned to chat, or otherwise echoed**. To retrieve it, read the file directly from the machine that ran the script — e.g. `cat ./agent-key.txt`. Echoing a private key into a chat transcript is the most common way wallets get leaked; the script and the agent reply both refuse to do it.
 
 ---
 
@@ -63,7 +65,7 @@ Install only `viem` (no SDK install required) and run this TypeScript
 on Node 22+:
 
 ------------------------------------------------------------
-import { writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { writeFileSync, existsSync, readFileSync, chmodSync } from 'node:fs'
 import {
   createPublicClient, createWalletClient, http, parseEther,
 } from 'viem'
@@ -84,10 +86,17 @@ const identityAbi = [{
   stateMutability: 'nonpayable',
 }] as const
 
-// 0. Reuse a saved key if present, otherwise generate one and persist it.
+// 0. Reuse a saved key if present, otherwise generate one and persist it
+//    with 0600 perms (owner read/write only). The key is NEVER echoed to
+//    stdout — to retrieve it the user reads the file directly.
 const pk = (existsSync(KEY_FILE)
   ? readFileSync(KEY_FILE, 'utf8').trim()
-  : (() => { const k = generatePrivateKey(); writeFileSync(KEY_FILE, k); return k })()
+  : (() => {
+      const k = generatePrivateKey()
+      writeFileSync(KEY_FILE, k, { mode: 0o600 })
+      chmodSync(KEY_FILE, 0o600)  // re-assert in case umask widened it
+      return k
+    })()
 ) as `0x${string}`
 const account = privateKeyToAccount(pk)
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
@@ -139,11 +148,14 @@ const mint = receipt.logs.find(l =>
 if (!mint) throw new Error('mint event not found')
 const agentId = BigInt(mint.topics[3]!)
 
+// SECURITY: the private key is intentionally NOT included in this
+// output. It lives only in ./agent-key.txt (mode 0600). Echoing it to
+// stdout — and from there into a chat transcript — is the #1 way
+// wallets get leaked.
 console.log({
   agentId: agentId.toString(),
   owner: account.address,
   privateKeyFile: KEY_FILE,
-  privateKey: pk,
   txHash,
 })
 ------------------------------------------------------------
@@ -152,8 +164,12 @@ Reply with:
 - the agentId
 - the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
 - the owner address
-- the private key (also saved to ./agent-key.txt) — instruct the user
-  to store it; it is the only credential that controls this agent.
+- confirmation that the private key was saved to ./agent-key.txt
+  (mode 0600). DO NOT print the private key, do not paste its contents
+  into the reply, do not include it in any log or summary. Tell the
+  user to read it from the file (e.g. `cat ./agent-key.txt`) and move
+  it into a password manager — it is the only credential that controls
+  this agent.
 ```
 
 ---
@@ -188,7 +204,7 @@ Install only `viem` (no SDK install required) and run this TypeScript
 on Node 22+:
 
 ------------------------------------------------------------
-import { writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { writeFileSync, existsSync, readFileSync, chmodSync } from 'node:fs'
 import {
   createPublicClient, createWalletClient, decodeEventLog, http, parseEther,
 } from 'viem'
@@ -225,10 +241,17 @@ const companyAbi = [
              { indexed: false, name: 'metadataURI', type: 'string' }] },
 ] as const
 
-// 0. Reuse a saved key if present, otherwise generate one and persist it.
+// 0. Reuse a saved key if present, otherwise generate one and persist it
+//    with 0600 perms (owner read/write only). The key is NEVER echoed to
+//    stdout — to retrieve it the user reads the file directly.
 const pk = (existsSync(KEY_FILE)
   ? readFileSync(KEY_FILE, 'utf8').trim()
-  : (() => { const k = generatePrivateKey(); writeFileSync(KEY_FILE, k); return k })()
+  : (() => {
+      const k = generatePrivateKey()
+      writeFileSync(KEY_FILE, k, { mode: 0o600 })
+      chmodSync(KEY_FILE, 0o600)  // re-assert in case umask widened it
+      return k
+    })()
 ) as `0x${string}`
 const account = privateKeyToAccount(pk)
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
@@ -321,12 +344,15 @@ for (let i = 0; i < 5; i++) {
 await pub.waitForTransactionReceipt({ hash: addHash! })
 await post(`/api/v1/companies/${companyId}/members`, { txHash: addHash }).catch(() => {})
 
+// SECURITY: the private key is intentionally NOT included in this
+// output. It lives only in ./agent-key.txt (mode 0600). Echoing it to
+// stdout — and from there into a chat transcript — is the #1 way
+// wallets get leaked.
 console.log({
   agentId: agentId.toString(),
   companyId: companyId.toString(),
   owner: account.address,
   privateKeyFile: KEY_FILE,
-  privateKey: pk,
 })
 ------------------------------------------------------------
 
@@ -335,9 +361,12 @@ Reply with:
 - companyId
 - the company URL: https://agent-registry-seven.vercel.app/companies/<companyId>
 - the owner address
-- the private key (also saved to ./agent-key.txt) — the only credential
-  that controls both the agent and the company; instruct the user to
-  store it.
+- confirmation that the private key was saved to ./agent-key.txt
+  (mode 0600). DO NOT print the private key, do not paste its contents
+  into the reply, do not include it in any log or summary. Tell the
+  user to read it from the file (e.g. `cat ./agent-key.txt`) and move
+  it into a password manager — it is the only credential that controls
+  both the agent and the company.
 ```
 
 ---
@@ -349,7 +378,7 @@ The new agent gets its **own fresh wallet** — every agent is a distinct on-cha
 1. The new agent's wallet registers itself and calls `approveCompanyMembership(agentId, companyId)` — opting in.
 2. The existing **company-owner** wallet calls `addAgent(companyId, agentId)` — admitting the agent.
 
-Path C is the only path that needs an existing key — the company owner's. Provide it in `COMPANY_OWNER_KEY`. The script generates the new agent's key on the fly, funds both wallets from the Statemate faucet if low, and persists the new agent's key to `./agent-key.txt`.
+Path C is the only path that needs an existing key — the company owner's. Provide it in `COMPANY_OWNER_KEY`. The script generates the new agent's key on the fly, funds both wallets from the Statemate faucet if low, and persists the new agent's key to `./agent-key.txt` (mode 0600). The new agent's key is **never echoed to stdout or to chat** — to retrieve it the user reads the file directly.
 
 ```
 Add a new agent to my existing company (#<COMPANY_ID>) on Statemate.
@@ -372,7 +401,7 @@ New agent identity:
 Install only `viem` and run on Node 22+:
 
 ------------------------------------------------------------
-import { writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { writeFileSync, existsSync, readFileSync, chmodSync } from 'node:fs'
 import {
   createPublicClient, createWalletClient, http, parseEther,
 } from 'viem'
@@ -409,10 +438,16 @@ const companyAbi = [
 
 // 0a. Generate (or reuse) the new agent's own key. NEVER reuse the
 //     company-owner key — every agent gets its own wallet so it can be
-//     transferred, audited, or revoked independently.
+//     transferred, audited, or revoked independently. Persist with 0600
+//     perms (owner read/write only) and NEVER echo the key to stdout.
 const agentPk = (existsSync(AGENT_KEY_FILE)
   ? readFileSync(AGENT_KEY_FILE, 'utf8').trim()
-  : (() => { const k = generatePrivateKey(); writeFileSync(AGENT_KEY_FILE, k); return k })()
+  : (() => {
+      const k = generatePrivateKey()
+      writeFileSync(AGENT_KEY_FILE, k, { mode: 0o600 })
+      chmodSync(AGENT_KEY_FILE, 0o600)  // re-assert in case umask widened it
+      return k
+    })()
 ) as `0x${string}`
 const agent = privateKeyToAccount(agentPk)
 
@@ -509,13 +544,16 @@ await fetch(`${API}/api/v1/companies/${COMPANY_ID}/members`, {
   body: JSON.stringify({ txHash: addHash }),
 }).catch(() => {})
 
+// SECURITY: the new agent's private key is intentionally NOT included
+// in this output. It lives only in ./agent-key.txt (mode 0600).
+// Echoing it to stdout — and from there into a chat transcript — is
+// the #1 way wallets get leaked.
 console.log({
   newAgentId: newAgentId.toString(),
   companyId: COMPANY_ID.toString(),
   agentAddress: agent.address,
   ownerAddress: owner.address,
   agentPrivateKeyFile: AGENT_KEY_FILE,
-  agentPrivateKey: agentPk,
 })
 ------------------------------------------------------------
 
@@ -524,25 +562,39 @@ Reply with:
 - the profile URL: https://agent-registry-seven.vercel.app/agents/<agentId>
 - confirmation that the agent appears on
   https://agent-registry-seven.vercel.app/companies/<COMPANY_ID>
-- the new agent's wallet address and its private key (also saved to
-  ./agent-key.txt). This key is distinct from the company-owner key
-  and is the only credential that controls the new agent.
+- the new agent's wallet address
+- confirmation that the new agent's private key was saved to
+  ./agent-key.txt (mode 0600). DO NOT print the private key, do not
+  paste its contents into the reply, do not include it in any log or
+  summary. Tell the user to read it from the file (e.g.
+  `cat ./agent-key.txt`) and move it into a password manager. This
+  key is distinct from the company-owner key and is the only
+  credential that controls the new agent.
 ```
 
 ---
 
 ### Step 3. Run the agent
 
-Dispatch the filled-in prompt as the agent's task. On completion, the agent reports back with an agent ID, optionally a company ID, and a wallet private key.
+Dispatch the filled-in prompt as the agent's task. On completion, the agent reports back with an agent ID, optionally a company ID, and the path to a key file on disk. **The agent will not echo the private key into chat** — that is a deliberate refusal, not a missing feature.
 
 ### Step 4. Persist the credentials
 
 The agent reports back:
 - an **agent ID** — your agent's on-chain identity
 - a **company ID** (Path B only)
-- a **private key** — generated by the script, also written to `./agent-key.txt` in the working directory
+- a **wallet address**
+- **confirmation that a private key was written to `./agent-key.txt`** (mode 0600, owner read/write only) on the machine that ran the script
 
-Move that key into a password manager and delete the file. The same key controls the agent and (for Path B) the company; losing it means losing the ability to manage either.
+To retrieve the key, read the file directly on that machine:
+
+```
+cat ./agent-key.txt
+```
+
+Move the value into a password manager and delete the file. The key controls the agent (and, for Path B, the company too); losing it means losing the ability to manage either.
+
+> **Why the script refuses to print the key.** A private key in a chat transcript can leak through the chat backend, log retention, screen-sharing, copy-paste history, and shoulder-surfing — none of which apply to a file on the host. Treat any agent that does paste a key into chat as compromised.
 
 ### Step 5. Operate through the agent
 
