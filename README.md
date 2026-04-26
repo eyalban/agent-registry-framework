@@ -55,7 +55,7 @@ itself from the Statemate faucet, and registers.
 
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
-IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
+Wrapper:           0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C
 
 Identity card:
   name         = <WHAT SHOULD I CALL YOU?>
@@ -73,17 +73,34 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
-const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
-const TRANSFER_TOPIC =
-  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+// AgentRegistryWrapper — register through this (NOT the canonical
+// IdentityRegistry directly). It mints the same NFT but emits an
+// AgentRegisteredViaWrapper event that the platform indexes, which is
+// what makes the agent appear on the registry listing.
+const WRAPPER = '0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C'
+const WRAPPER_REGISTERED_TOPIC =
+  '0xf378f340d0146df55419ce014484d27d25b1b13cafac89f1407566f737ba2e9a'
 const KEY_FILE = './agent-key.txt'
-const MIN_FUNDING = parseEther('0.0003')   // ~3× safety margin for 1 tx
+// Wrapper charges a 0.001 ETH registration fee + ~0.0001 ETH gas. 15
+// drips ≈ 0.0015 ETH covers it with a comfortable safety margin.
+const MIN_FUNDING = parseEther('0.0015')
 
-const identityAbi = [{
-  type: 'function', name: 'register',
-  inputs: [{ name: 'agentURI', type: 'string' }],
+const wrapperAbi = [{
+  type: 'function', name: 'registerAgent',
+  inputs: [
+    { name: 'agentURI', type: 'string' },
+    { name: 'metadata', type: 'tuple[]', components: [
+      { name: 'key', type: 'string' },
+      { name: 'value', type: 'bytes' },
+    ]},
+    { name: 'tags', type: 'string[]' },
+  ],
   outputs: [{ name: 'agentId', type: 'uint256' }],
-  stateMutability: 'nonpayable',
+  stateMutability: 'payable',
+}, {
+  type: 'function', name: 'registrationFee',
+  inputs: [], outputs: [{ name: '', type: 'uint256' }],
+  stateMutability: 'view',
 }] as const
 
 // 0. Reuse a saved key if present, otherwise generate one and persist it
@@ -102,16 +119,24 @@ const account = privateKeyToAccount(pk)
 const pub = createPublicClient({ chain: baseSepolia, transport: http() })
 const wallet = createWalletClient({ account, chain: baseSepolia, transport: http() })
 
-// 1. Self-fund via Statemate faucet (4 drips ≈ 0.0004 ETH, plenty for 1 tx).
+// 1. Self-fund via Statemate faucet. CDP rate-limits at 10 drips per
+//    minute per address, so the script splits the 15-drip request into
+//    two batches 65 s apart: 10 drips for the wrapper fee, then 5 more
+//    for gas + safety margin.
+async function drip(drips: number) {
+  const r = await fetch(`${API}/api/v1/faucet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, drips }),
+  })
+  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+}
 async function ensureFunded() {
   let bal = await pub.getBalance({ address: account.address })
   if (bal >= MIN_FUNDING) return
-  const r = await fetch(`${API}/api/v1/faucet`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address: account.address, drips: 4 }),
-  })
-  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
-  // Wait for funding txs to land.
+  await drip(10)
+  // Wait out the per-address rate-limit window before the second batch.
+  await new Promise(s => setTimeout(s, 65_000))
+  await drip(5)
   for (let i = 0; i < 30; i++) {
     await new Promise(s => setTimeout(s, 2000))
     bal = await pub.getBalance({ address: account.address })
@@ -133,20 +158,26 @@ const uploadRes = await fetch(`${API}/api/v1/upload`, {
 })
 const { uri: agentURI } = await uploadRes.json()
 
-// 3. Register on-chain (canonical IdentityRegistry, no wrapper, no fee).
+// 3. Register through the wrapper. The wrapper mints the canonical
+//    ERC-8004 NFT AND emits the event that surfaces the agent on the
+//    Statemate registry. msg.value must equal the current registrationFee.
+const fee = await pub.readContract({
+  address: WRAPPER, abi: wrapperAbi, functionName: 'registrationFee',
+})
 const txHash = await wallet.writeContract({
-  address: IDENTITY_REGISTRY, abi: identityAbi,
-  functionName: 'register', args: [agentURI],
+  address: WRAPPER, abi: wrapperAbi,
+  functionName: 'registerAgent', args: [agentURI, [], []],
+  value: fee,
 })
 const receipt = await pub.waitForTransactionReceipt({ hash: txHash })
 
-// 4. Extract agentId from the ERC-721 Transfer(from=0x0) event.
-const mint = receipt.logs.find(l =>
-  l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
-  l.topics[0] === TRANSFER_TOPIC &&
-  l.topics[1] === '0x' + '0'.repeat(64))
-if (!mint) throw new Error('mint event not found')
-const agentId = BigInt(mint.topics[3]!)
+// 4. Extract agentId from AgentRegisteredViaWrapper(agentId, owner, tags).
+//    topic1 is the indexed agentId.
+const ev = receipt.logs.find(l =>
+  l.address.toLowerCase() === WRAPPER.toLowerCase() &&
+  l.topics[0] === WRAPPER_REGISTERED_TOPIC)
+if (!ev) throw new Error('wrapper registration event not found')
+const agentId = BigInt(ev.topics[1]!)
 
 // SECURITY: the private key is intentionally NOT included in this
 // output. It lives only in ./agent-key.txt (mode 0600). Echoing it to
@@ -188,7 +219,7 @@ Statemate faucet, and submits all three transactions.
 
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
-IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
+Wrapper:           0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C
 CompanyRegistry:   0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8
 
 Agent identity:
@@ -212,18 +243,34 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
-const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
-const COMPANY_REGISTRY  = '0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8'
-const TRANSFER_TOPIC =
-  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+// AgentRegistryWrapper — register through this (NOT the canonical
+// IdentityRegistry directly). Its AgentRegisteredViaWrapper event is
+// what surfaces the agent on the Statemate registry.
+const WRAPPER          = '0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C'
+const COMPANY_REGISTRY = '0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8'
+const WRAPPER_REGISTERED_TOPIC =
+  '0xf378f340d0146df55419ce014484d27d25b1b13cafac89f1407566f737ba2e9a'
 const KEY_FILE = './agent-key.txt'
-const MIN_FUNDING = parseEther('0.0006')   // safety margin for 3 txs
+// 0.001 ETH wrapper fee + ~0.0001 ETH × 3 gas-paying txs. 18 drips
+// ≈ 0.0018 ETH covers it with margin.
+const MIN_FUNDING = parseEther('0.0018')
 
-const identityAbi = [{
-  type: 'function', name: 'register',
-  inputs: [{ name: 'agentURI', type: 'string' }],
+const wrapperAbi = [{
+  type: 'function', name: 'registerAgent',
+  inputs: [
+    { name: 'agentURI', type: 'string' },
+    { name: 'metadata', type: 'tuple[]', components: [
+      { name: 'key', type: 'string' },
+      { name: 'value', type: 'bytes' },
+    ]},
+    { name: 'tags', type: 'string[]' },
+  ],
   outputs: [{ name: 'agentId', type: 'uint256' }],
-  stateMutability: 'nonpayable',
+  stateMutability: 'payable',
+}, {
+  type: 'function', name: 'registrationFee',
+  inputs: [], outputs: [{ name: '', type: 'uint256' }],
+  stateMutability: 'view',
 }] as const
 
 const companyAbi = [
@@ -266,15 +313,23 @@ const post = async (path: string, body: unknown) => {
   return r.json()
 }
 
-// 1. Self-fund via Statemate faucet (8 drips ≈ 0.0008 ETH covers 3 txs).
+// 1. Self-fund via Statemate faucet. CDP rate-limits at 10 drips per
+//    minute per address, so the script splits the 18-drip request into
+//    two batches 65 s apart: 10 drips for the wrapper fee, then 8 more
+//    for gas across the three transactions.
+async function drip(drips: number) {
+  const r = await fetch(`${API}/api/v1/faucet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address: account.address, drips }),
+  })
+  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+}
 async function ensureFunded() {
   let bal = await pub.getBalance({ address: account.address })
   if (bal >= MIN_FUNDING) return
-  const r = await fetch(`${API}/api/v1/faucet`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address: account.address, drips: 8 }),
-  })
-  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+  await drip(10)
+  await new Promise(s => setTimeout(s, 65_000))
+  await drip(8)
   for (let i = 0; i < 30; i++) {
     await new Promise(s => setTimeout(s, 2000))
     bal = await pub.getBalance({ address: account.address })
@@ -284,23 +339,28 @@ async function ensureFunded() {
 }
 await ensureFunded()
 
-// 2. Upload + register agent.
+// 2. Upload + register agent through the wrapper. msg.value must equal
+//    the current registrationFee. The wrapper mints the canonical
+//    ERC-8004 NFT AND emits the event the platform indexes.
 const { uri: agentURI } = await post('/api/v1/upload', {
   type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
   name: '<AGENT NAME>', description: '<ONE SENTENCE>',
   image: 'https://placehold.co/400x400/0f1520/00e5ff?text=Agent',
 })
+const fee = await pub.readContract({
+  address: WRAPPER, abi: wrapperAbi, functionName: 'registrationFee',
+})
 const regHash = await wallet.writeContract({
-  address: IDENTITY_REGISTRY, abi: identityAbi,
-  functionName: 'register', args: [agentURI],
+  address: WRAPPER, abi: wrapperAbi,
+  functionName: 'registerAgent', args: [agentURI, [], []],
+  value: fee,
 })
 const regReceipt = await pub.waitForTransactionReceipt({ hash: regHash })
-const mint = regReceipt.logs.find(l =>
-  l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
-  l.topics[0] === TRANSFER_TOPIC &&
-  l.topics[1] === '0x' + '0'.repeat(64))
-if (!mint) throw new Error('mint event not found')
-const agentId = BigInt(mint.topics[3]!)
+const ev = regReceipt.logs.find(l =>
+  l.address.toLowerCase() === WRAPPER.toLowerCase() &&
+  l.topics[0] === WRAPPER_REGISTERED_TOPIC)
+if (!ev) throw new Error('wrapper registration event not found')
+const agentId = BigInt(ev.topics[1]!)
 
 // 3. Upload company metadata + createCompany.
 const { uri: metadataURI } = await post('/api/v1/companies/metadata', {
@@ -391,7 +451,7 @@ transactions.
 
 Network:           Base Sepolia (chain id 84532)
 API base:          https://agent-registry-seven.vercel.app
-IdentityRegistry:  0x8004A818BFB912233c491871b3d84c89A494BD9e
+Wrapper:           0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C
 CompanyRegistry:   0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8
 
 New agent identity:
@@ -409,20 +469,36 @@ import { privateKeyToAccount, generatePrivateKey } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
 const API = 'https://agent-registry-seven.vercel.app'
-const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e'
-const COMPANY_REGISTRY  = '0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8'
+// AgentRegistryWrapper — register through this (NOT the canonical
+// IdentityRegistry directly). Its AgentRegisteredViaWrapper event is
+// what surfaces the agent on the Statemate registry.
+const WRAPPER          = '0xC02DE01B0ecBcE17c4E71fc7A0Ad86764B3DF64C'
+const COMPANY_REGISTRY = '0x7b1598Ee7303A9EF733d2de92Ff81d555dcAb4A8'
 const COMPANY_ID = <COMPANY_ID>n
-const TRANSFER_TOPIC =
-  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+const WRAPPER_REGISTERED_TOPIC =
+  '0xf378f340d0146df55419ce014484d27d25b1b13cafac89f1407566f737ba2e9a'
 const AGENT_KEY_FILE = './agent-key.txt'
-const AGENT_MIN  = parseEther('0.0004')  // 2 txs (register + approve)
-const OWNER_MIN  = parseEther('0.0002')  // 1 tx  (addAgent)
+// Agent: 0.001 ETH wrapper fee + 2 gas-paying txs ≈ 0.0014 ETH (15 drips).
+// Owner: 1 gas-paying tx ≈ 0.0002 ETH (4 drips).
+const AGENT_MIN  = parseEther('0.0014')
+const OWNER_MIN  = parseEther('0.0002')
 
-const identityAbi = [{
-  type: 'function', name: 'register',
-  inputs: [{ name: 'agentURI', type: 'string' }],
+const wrapperAbi = [{
+  type: 'function', name: 'registerAgent',
+  inputs: [
+    { name: 'agentURI', type: 'string' },
+    { name: 'metadata', type: 'tuple[]', components: [
+      { name: 'key', type: 'string' },
+      { name: 'value', type: 'bytes' },
+    ]},
+    { name: 'tags', type: 'string[]' },
+  ],
   outputs: [{ name: 'agentId', type: 'uint256' }],
-  stateMutability: 'nonpayable',
+  stateMutability: 'payable',
+}, {
+  type: 'function', name: 'registrationFee',
+  inputs: [], outputs: [{ name: '', type: 'uint256' }],
+  stateMutability: 'view',
 }] as const
 
 const companyAbi = [
@@ -463,15 +539,26 @@ const pub = createPublicClient({ chain: baseSepolia, transport: http() })
 const agentWallet = createWalletClient({ account: agent, chain: baseSepolia, transport: http() })
 const ownerWallet = createWalletClient({ account: owner, chain: baseSepolia, transport: http() })
 
-// 1. Top up both wallets from the Statemate faucet if low.
+// 1. Top up both wallets from the Statemate faucet if low. CDP
+//    rate-limits at 10 drips per minute per address, so any request for
+//    more than 10 drips splits into two batches 65 s apart.
 async function fund(addr: `0x${string}`, min: bigint, drips: number) {
   let bal = await pub.getBalance({ address: addr })
   if (bal >= min) return
-  const r = await fetch(`${API}/api/v1/faucet`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address: addr, drips }),
-  })
-  if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+  async function dripOne(n: number) {
+    const r = await fetch(`${API}/api/v1/faucet`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: addr, drips: n }),
+    })
+    if (!r.ok) throw new Error(`faucet ${r.status}: ${await r.text()}`)
+  }
+  if (drips > 10) {
+    await dripOne(10)
+    await new Promise(s => setTimeout(s, 65_000))
+    await dripOne(drips - 10)
+  } else {
+    await dripOne(drips)
+  }
   for (let i = 0; i < 30; i++) {
     await new Promise(s => setTimeout(s, 2000))
     bal = await pub.getBalance({ address: addr })
@@ -479,10 +566,11 @@ async function fund(addr: `0x${string}`, min: bigint, drips: number) {
   }
   throw new Error(`funding ${addr} never landed (balance ${bal})`)
 }
-await fund(agent.address, AGENT_MIN, 6)
+await fund(agent.address, AGENT_MIN, 15)
 await fund(owner.address, OWNER_MIN, 4)
 
-// 2. Register the new agent under its own wallet.
+// 2. Register the new agent under its own wallet, through the wrapper.
+//    msg.value must equal the current registrationFee.
 const uploadRes = await fetch(`${API}/api/v1/upload`, {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -492,17 +580,20 @@ const uploadRes = await fetch(`${API}/api/v1/upload`, {
   }),
 })
 const { uri: agentURI } = await uploadRes.json()
+const fee = await pub.readContract({
+  address: WRAPPER, abi: wrapperAbi, functionName: 'registrationFee',
+})
 const regHash = await agentWallet.writeContract({
-  address: IDENTITY_REGISTRY, abi: identityAbi,
-  functionName: 'register', args: [agentURI],
+  address: WRAPPER, abi: wrapperAbi,
+  functionName: 'registerAgent', args: [agentURI, [], []],
+  value: fee,
 })
 const regReceipt = await pub.waitForTransactionReceipt({ hash: regHash })
-const mint = regReceipt.logs.find(l =>
-  l.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() &&
-  l.topics[0] === TRANSFER_TOPIC &&
-  l.topics[1] === '0x' + '0'.repeat(64))
-if (!mint) throw new Error('mint event not found')
-const newAgentId = BigInt(mint.topics[3]!)
+const ev = regReceipt.logs.find(l =>
+  l.address.toLowerCase() === WRAPPER.toLowerCase() &&
+  l.topics[0] === WRAPPER_REGISTERED_TOPIC)
+if (!ev) throw new Error('wrapper registration event not found')
+const newAgentId = BigInt(ev.topics[1]!)
 
 // 3. The agent opts in to the target company (signed by the agent's key).
 //    Retry: the IdentityRegistry mint may not have propagated to whichever
